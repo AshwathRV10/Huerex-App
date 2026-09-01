@@ -75,6 +75,8 @@ export const MODULES: ModuleDef[] = [
   { key: 'waivers', label: 'Management Approvals', group: 'Control', actions: ['view', 'create', 'edit', 'delete', 'approve'] },
   { key: 'dataaudit', label: 'Data Audit', group: 'Control', actions: ['view', 'export'] },
   { key: 'capacity', label: 'Capacity & Load', group: 'Control', actions: ['view', 'export'] },
+  { key: 'sets', label: 'Set Control', group: 'Control', actions: ['view', 'export'],
+    description: 'A set only ships when both halves ship' },
 
   // ------------------------------------------------------------- commercial
   {
@@ -153,6 +155,7 @@ export function sensitiveFieldKeys(moduleKey: string): string[] {
 const floorView = [
   'dashboard.view', 'orders.view', 'route.view', 'matrix.view', 'wip.view',
   'timeline.view', 'alerts.view', 'reconciliation.view', 'dataaudit.view',
+  'sets.view',
 ];
 
 /**

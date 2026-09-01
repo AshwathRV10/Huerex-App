@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useSession } from './lib/session';
 import { AppShell } from './components/AppShell';
-import { Empty } from './components/ui';
+import { Empty, PageHead } from './components/ui';
 import { Icon } from './components/Icons';
 
 import { Login, ForcePasswordChange } from './pages/Login';
@@ -20,27 +20,49 @@ import {
   DataAuditPage, CapacityPage, BuyerSummaryPage, BuyerDetailPage,
 } from './pages/reports';
 import { UsersPage, AuditPage, SettingsPage, MastersPage, BuyersPage, AccountPage } from './pages/admin';
+import { SetControlPage } from './pages/SetControl';
 
 /** A screen the person's role does not include. Says so plainly. */
 function NoAccess() {
   const location = useLocation();
   return (
-    <Empty
-      icon={<Icon.Lock size={20} />}
-      title="This screen is not part of your role"
-      body={
-        <>
-          Access to <b>{location.pathname}</b> is restricted. If you need it, an administrator can
-          add it to your role — the change takes effect the next time you sign in.
-        </>
-      }
-    />
+    <>
+      <PageHead title="Restricted" lede="This screen is not part of your role." />
+      <div className="card">
+        <Empty
+          icon={<Icon.Lock size={20} />}
+          title="No access to this screen"
+          body={
+            <>
+              Access to <b>{location.pathname}</b> is restricted. If you need it, an administrator
+              can add it to your role — the change takes effect the next time you sign in.
+            </>
+          }
+        />
+      </div>
+    </>
   );
 }
 
 function Guard({ perm, children }: { perm: string; children: React.ReactNode }) {
   const { can } = useSession();
   return can(perm) ? <>{children}</> : <NoAccess />;
+}
+
+/** Every page carries an h1, including this one — screen readers rely on it. */
+function NotFound() {
+  return (
+    <>
+      <PageHead title="Page not found" lede="There is no screen at that address." />
+      <div className="card">
+        <Empty
+          icon={<Icon.Search size={20} />}
+          title="Nothing here"
+          body="Press ⌘K to search for an order, or pick a screen from the menu."
+        />
+      </div>
+    </>
+  );
 }
 
 /** Send people to the first screen their role actually includes. */
@@ -103,6 +125,7 @@ export function App() {
         <Route path="/alerts" element={<Guard perm="alerts.view"><AlertsPage /></Guard>} />
         <Route path="/data-audit" element={<Guard perm="dataaudit.view"><DataAuditPage /></Guard>} />
         <Route path="/capacity" element={<Guard perm="capacity.view"><CapacityPage /></Guard>} />
+        <Route path="/set-control" element={<Guard perm="sets.view"><SetControlPage /></Guard>} />
         <Route path="/buyer-summary" element={<Guard perm="buyersummary.view"><BuyerSummaryPage /></Guard>} />
         <Route path="/buyer-summary/:buyer" element={<Guard perm="buyersummary.view"><BuyerDetailPage /></Guard>} />
 
@@ -113,10 +136,7 @@ export function App() {
         <Route path="/settings" element={<Guard perm="settings.view"><SettingsPage /></Guard>} />
         <Route path="/account" element={<AccountPage />} />
 
-        <Route path="*" element={
-          <Empty icon={<Icon.Search size={20} />} title="That page does not exist"
-            body="Use the search box at the top, or pick a screen from the menu." />
-        } />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AppShell>
   );

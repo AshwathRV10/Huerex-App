@@ -69,6 +69,7 @@ export const NAV: NavGroup[] = [
     items: [
       { to: '/reconciliation', label: 'Reconciliation', icon: 'Balance', perm: 'reconciliation.view', keywords: 'cut shipped rejected identity' },
       { to: '/capacity', label: 'Capacity & load', icon: 'Scale', perm: 'capacity.view', keywords: 'minutes operators lines' },
+      { to: '/set-control', label: 'Set control', icon: 'Layers', perm: 'sets.view', keywords: 'set pair top bottom halves together' },
       { to: '/waivers', label: 'Management approvals', icon: 'Shield', perm: 'waivers.view', keywords: 'waive suppress accept alert' },
       { to: '/data-audit', label: 'Data audit', icon: 'Check', perm: 'dataaudit.view', keywords: 'checks trust clean' },
     ],

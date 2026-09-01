@@ -7,6 +7,7 @@ import { sendCsv } from '../lib/http.js';
 import { computeAlerts, summarise } from '../engine/alerts.js';
 import { listOrders, wipForAll, wipForOrder, effectiveExcessPct, type OrderRow } from '../engine/facts.js';
 import { computeCostSheet } from '../engine/costing.js';
+import { setControl } from '../engine/sets.js';
 
 /**
  * Everything that reads rather than writes: the dashboard, WIP, the timeline,
@@ -593,6 +594,26 @@ export function registerReports(app: FastifyInstance): void {
     assertPermission(req, 'dataaudit.view');
     const checks = dataAudit();
     return reply.send({ checks, open: checks.reduce((s, c) => s + c.issues, 0) });
+  });
+
+  // ---------------------------------------------------------- set control
+  app.get('/api/set-control', async (req: FastifyRequest, reply: FastifyReply) => {
+    assertPermission(req, 'sets.view');
+    return reply.send(setControl());
+  });
+
+  app.get('/api/set-control/export', async (req: FastifyRequest, reply: FastifyReply) => {
+    assertPermission(req, 'sets.export');
+    const { rows } = setControl();
+    const flat = rows.flatMap((r) => r.legs.map((l) => ({
+      Set: r.set_group, Colour: r.colour, Size: r.size, SetQty: r.set_qty,
+      Order: l.order_no, Role: l.role, Cut: l.cut, Good: l.good,
+      Packed: l.packed, Shipped: l.shipped,
+      SetsMakeable: r.sets_makeable, SetsShipped: r.sets_shipped,
+      LegGap: r.leg_gap, Status: r.status,
+    })));
+    audit(req, { action: 'export', entity: 'set_control', summary: `Exported ${flat.length} set rows`, severity: 'notice' });
+    return sendCsv(reply, `set-control-${new Date().toISOString().slice(0, 10)}.csv`, flat);
   });
 
   // ------------------------------------------------------- capacity & load
