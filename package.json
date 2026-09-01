@@ -2,9 +2,14 @@
   "name": "huerex-gfes",
   "version": "6.0.0",
   "private": true,
-  "description": "HUEREX GFES — Garment Factory Execution System with per-garment costing",
-  "workspaces": ["server", "web"],
-  "engines": { "node": ">=20" },
+  "description": "HUEREX GFES \u2014 Garment Factory Execution System with per-garment costing",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "npm-run-all --parallel dev:server dev:web",
     "dev:server": "npm --workspace server run dev",
@@ -15,7 +20,10 @@
     "seed": "npm --workspace server run seed",
     "backup": "npm --workspace server run backup",
     "typecheck": "npm --workspace server run typecheck && npm --workspace web run typecheck",
-    "test": "npm --workspace server run test"
+    "test": "npm --workspace server run test",
+    "test:rbac": "npm --workspace server run test:rbac"
   },
-  "devDependencies": { "npm-run-all": "^4.1.5" }
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  }
 }

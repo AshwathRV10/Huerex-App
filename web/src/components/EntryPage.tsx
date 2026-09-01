@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
-import { BulkGrid, isBlankRow, makeBlank, type GridColumn, type GridRow } from './BulkGrid';
+import { BulkGrid, filledRows, makeBlank, type GridColumn, type GridRow } from './BulkGrid';
 import { OrderPicker } from './OrderPicker';
 import { Confirm, Empty, Loading, PageHead, Tabs } from './ui';
 import { Icon } from './Icons';
@@ -95,7 +95,7 @@ export function EntryPage({
     onError: (e) => { toast.error(e); setConfirmDelete(null); },
   });
 
-  const ready = rows.filter((r) => !isBlankRow(r, columns, blank));
+  const ready = filledRows(rows, columns, blank);
   const invalid = ready.some((r) => validate?.(r));
   const needsOrder = !orderOptional && !orderNo;
 

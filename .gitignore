@@ -13,3 +13,5 @@ backups/
 web/dist/
 server/dist/
 coverage/
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo

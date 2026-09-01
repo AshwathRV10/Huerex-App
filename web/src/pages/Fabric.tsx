@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
-import { BulkGrid, isBlankRow, makeBlank, type GridColumn, type GridRow } from '../components/BulkGrid';
+import { BulkGrid, filledRows, makeBlank, type GridColumn, type GridRow } from '../components/BulkGrid';
 import { OrderPicker } from '../components/OrderPicker';
 import { DateField, NumField } from '../components/RateField';
 import { Empty, Loading, LockedValue, Modal, PageHead, Tabs } from '../components/ui';
@@ -100,7 +100,7 @@ export function FabricPage() {
     onError: (e) => toast.error(e),
   });
 
-  const ready = rows.filter((r) => !isBlankRow(r, LEDGER_COLUMNS, blankRow));
+  const ready = filledRows(rows, LEDGER_COLUMNS, blankRow);
   const stockRows = stock.data?.rows ?? [];
   const totals = useMemo(() => stockRows.reduce((acc, r) => ({
     balance: acc.balance + r.balance_kg,

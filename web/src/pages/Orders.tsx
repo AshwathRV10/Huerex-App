@@ -7,7 +7,7 @@ import { useToast } from '../lib/toast';
 import { Combobox } from '../components/Combobox';
 import { OrderPicker } from '../components/OrderPicker';
 import { DateField, NumField, SelectField, TextField } from '../components/RateField';
-import { BulkGrid, makeBlank, isBlankRow, type GridColumn, type GridRow } from '../components/BulkGrid';
+import { BulkGrid, makeBlank, filledRows, type GridColumn, type GridRow } from '../components/BulkGrid';
 import { Empty, Loading, Meter, Modal, PageHead, RouteBar, StatusBadge, Tabs } from '../components/ui';
 import { Icon } from '../components/Icons';
 import { date, days, longDate, qty, today } from '../lib/format';
@@ -557,7 +557,7 @@ function MatrixEditor({ orderNo }: { orderNo: string }) {
 
   const save = useMutation({
     mutationFn: () => api.put(`/api/orders/${encodeURIComponent(orderNo)}/matrix`, {
-      cells: rows.filter((r) => !isBlankRow(r, MATRIX_COLUMNS, MATRIX_BLANK)),
+      cells: filledRows(rows, MATRIX_COLUMNS, MATRIX_BLANK),
       replace: true,
     }),
     onSuccess: () => {
@@ -581,7 +581,7 @@ function MatrixEditor({ orderNo }: { orderNo: string }) {
     setEditing(true);
   };
 
-  const typedTotal = rows.filter((r) => !isBlankRow(r, MATRIX_COLUMNS, MATRIX_BLANK))
+  const typedTotal = filledRows(rows, MATRIX_COLUMNS, MATRIX_BLANK)
     .reduce((s, r) => s + Number(r.order_qty ?? 0), 0);
 
   return (

@@ -297,6 +297,18 @@ table.bulk tr.filled td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
     bottom: calc(env(safe-area-inset-bottom)); }
 }
 
+/* Bulk entry on a phone: one card per entry, fields stacked two-up. */
+.entry-card { border-left: 3px solid var(--line); }
+.entry-card.invalid { border-left-color: var(--danger); background: var(--danger-soft); }
+@media (max-width: 760px) {
+  .entry-card .line-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+@media (max-width: 430px) {
+  .entry-card .line-grid { grid-template-columns: 1fr 1fr; }
+  .entry-card .line-grid > .field:has(input[type='date']),
+  .entry-card .line-grid > .field:has(select) { grid-column: 1 / -1; }
+}
+
 /* A sticky action bar on phones, so Save is always under the thumb. */
 .action-bar { display: none; }
 @media (max-width: 900px) {

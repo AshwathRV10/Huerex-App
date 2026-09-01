@@ -155,8 +155,20 @@ const floorView = [
   'timeline.view', 'alerts.view', 'reconciliation.view', 'dataaudit.view',
 ];
 
-const allEntry = (mods: string[]) =>
-  mods.flatMap((m) => [`${m}.view`, `${m}.create`, `${m}.edit`, `${m}.export`]);
+/**
+ * "Everything an entry screen offers", expanded from the catalogue rather than
+ * assumed. Not every module declares every action — the route editor has no
+ * export, buyer approvals have approve instead — and inventing a key that the
+ * catalogue does not contain would create a permission nobody can ever hold
+ * while quietly breaking the escalation check, which compares a role's grants
+ * against the grants of the person editing it.
+ */
+const allEntry = (mods: string[], actions: Action[] = ['view', 'create', 'edit', 'export']) =>
+  mods.flatMap((m) => {
+    const def = MODULE_BY_KEY.get(m);
+    if (!def) throw new Error(`Unknown module "${m}" in a role definition`);
+    return actions.filter((a) => def.actions.includes(a)).map((a) => `${m}.${a}`);
+  });
 
 export interface RoleSeed {
   code: string; name: string; rank: number; description: string; permissions: string[];
@@ -260,3 +272,15 @@ export const DEFAULT_ROLES: RoleSeed[] = [
     ],
   },
 ];
+
+// A role that grants a permission the catalogue does not declare is a typo,
+// and a silent one: the grant can never match a check, and it makes the
+// no-escalation rule refuse edits by people who legitimately hold everything.
+// Caught here, at import, rather than the first time somebody edits a user.
+for (const role of DEFAULT_ROLES) {
+  for (const perm of role.permissions) {
+    if (!PERM_SET.has(perm)) {
+      throw new Error(`Role "${role.code}" grants unknown permission "${perm}"`);
+    }
+  }
+}

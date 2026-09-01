@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Combobox } from './Combobox';
 import { useToast } from '../lib/toast';
 import { today } from '../lib/format';
+import { useHandheld } from '../lib/useMedia';
 
 /**
  * Bulk entry.
@@ -62,15 +63,34 @@ export function makeBlank(columns: GridColumn[], seed: GridRow = {}): GridRow {
   return { ...row, ...seed };
 }
 
+/** What a new row looks like: the template, plus whatever carries forward. */
+export function carriedTemplate(columns: GridColumn[], blank: GridRow, previous?: GridRow): GridRow {
+  const fresh = { ...blank };
+  if (!previous) return fresh;
+  for (const c of columns) {
+    if (c.carry && previous[c.key] !== undefined && previous[c.key] !== '') fresh[c.key] = previous[c.key];
+  }
+  return fresh;
+}
+
 /**
- * A row counts as blank while it is still identical to the template it was
- * created from. Comparing against the template rather than looking for empty
- * values matters: a screen that seeds "counts as a garment" to true, or the
- * date to today, would otherwise report an untouched row as ready to save and
- * then complain that its required fields are missing.
+ * A row counts as blank while it still contains nothing the operator typed.
+ *
+ * That is not the same as "every field is empty". A screen seeds the date to
+ * today and "counts as a garment" to true, and carry-forward copies the
+ * colour and the fabric down from the row above — so an untouched row is
+ * full of values that came from the app rather than from a person. Comparing
+ * it against the row the app would have created is what tells the two apart;
+ * without it a freshly carried row is offered for saving and then rejected
+ * for missing the quantity nobody has typed yet.
  */
-export function isBlankRow(row: GridRow, columns: GridColumn[], blank?: GridRow): boolean {
-  if (blank) return columns.every((c) => String(row[c.key] ?? '') === String(blank[c.key] ?? ''));
+export function isBlankRow(
+  row: GridRow, columns: GridColumn[], blank?: GridRow, previous?: GridRow,
+): boolean {
+  if (blank) {
+    const template = carriedTemplate(columns, blank, previous);
+    return columns.every((c) => String(row[c.key] ?? '') === String(template[c.key] ?? ''));
+  }
   return columns.every((c) => {
     const v = row[c.key];
     if (c.type === 'number') return !v;
@@ -80,33 +100,39 @@ export function isBlankRow(row: GridRow, columns: GridColumn[], blank?: GridRow)
   });
 }
 
+/** The rows that carry something worth saving, in order. */
+export function filledRows(rows: GridRow[], columns: GridColumn[], blank: GridRow): GridRow[] {
+  return rows.filter((r, i) => !isBlankRow(r, columns, blank, i > 0 ? rows[i - 1] : undefined));
+}
+
 export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate, disabled }: Props) {
   const toast = useToast();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [focusCell, setFocusCell] = useState<{ r: number; c: number } | null>(null);
 
-  const errors = useMemo(
-    () => rows.map((r) => (isBlankRow(r, columns, blank) ? null : validate?.(r) ?? null)),
-    [rows, columns, validate, blank],
+  const untouched = useCallback(
+    (row: GridRow, index: number) => isBlankRow(row, columns, blank, index > 0 ? rows[index - 1] : undefined),
+    [rows, columns, blank],
   );
 
-  const carriedFrom = useCallback((source: GridRow | undefined): GridRow => {
-    const fresh = { ...blank };
-    if (!source) return fresh;
-    for (const c of columns) {
-      if (c.carry && source[c.key] !== undefined && source[c.key] !== '') fresh[c.key] = source[c.key];
-    }
-    return fresh;
-  }, [blank, columns]);
+  const errors = useMemo(
+    () => rows.map((r, i) => (untouched(r, i) ? null : validate?.(r) ?? null)),
+    [rows, validate, untouched],
+  );
+
+  const carriedFrom = useCallback(
+    (source: GridRow | undefined): GridRow => carriedTemplate(columns, blank, source),
+    [blank, columns],
+  );
 
   const setCell = useCallback((index: number, key: string, value: string | number | boolean) => {
     const next = rows.map((r, i) => (i === index ? { ...r, [key]: value } : r));
     // Typing in the last row starts the next one, so the grid never runs out.
-    if (index === rows.length - 1 && !isBlankRow(next[index], columns, blank)) {
+    if (index === rows.length - 1 && !untouched(next[index], index)) {
       next.push(carriedFrom(next[index]));
     }
     onChange(next);
-  }, [rows, onChange, columns, carriedFrom, blank]);
+  }, [rows, onChange, carriedFrom, untouched]);
 
   const addRow = useCallback(() => {
     onChange([...rows, carriedFrom(rows[rows.length - 1])]);
@@ -120,9 +146,9 @@ export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate
   const fillDown = useCallback((key: string) => {
     const first = rows[0]?.[key];
     if (first === undefined || first === '') { toast.push({ kind: 'warn', title: 'Fill the first row first' }); return; }
-    onChange(rows.map((r) => (isBlankRow(r, columns, blank) ? r : { ...r, [key]: first })));
+    onChange(rows.map((r, i) => (untouched(r, i) ? r : { ...r, [key]: first })));
     toast.ok(`Filled ${key.replace(/_/g, ' ')} down`, 'Every row now matches the first.');
-  }, [rows, onChange, columns, toast, blank]);
+  }, [rows, onChange, toast, untouched]);
 
   /** Paste a block from a spreadsheet straight into the grid. */
   const onPaste = useCallback((e: React.ClipboardEvent, startRow: number, startCol: number) => {
@@ -145,7 +171,9 @@ export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate
       });
       next[target] = row;
     });
-    if (!isBlankRow(next[next.length - 1], columns, blank)) next.push(carriedFrom(next[next.length - 1]));
+    if (!isBlankRow(next[next.length - 1], columns, blank, next[next.length - 2])) {
+      next.push(carriedFrom(next[next.length - 1]));
+    }
     onChange(next);
     toast.ok(`Pasted ${matrix.length} row${matrix.length === 1 ? '' : 's'}`, 'Check them before saving.');
   }, [rows, columns, onChange, carriedFrom, toast, blank]);
@@ -171,8 +199,70 @@ export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate
     setFocusCell({ r, c });
   }
 
-  const filled = rows.filter((r) => !isBlankRow(r, columns, blank)).length;
+  const filled = rows.filter((r, i) => !untouched(r, i)).length;
   const bad = errors.filter(Boolean).length;
+  const handheld = useHandheld();
+
+  /**
+   * On a phone the grid becomes one card per row.
+   *
+   * A twelve-column table on a 390px screen means scrolling sideways to fill
+   * in a single entry, which is exactly what makes a floor system get filled
+   * in later, from memory, at a desk. Carry-forward, validation and paste all
+   * behave the same — only the arrangement changes.
+   */
+  if (handheld) {
+    return (
+      <div className="col" style={{ gap: 'var(--s-3)' }}>
+        {rows.map((row, r) => {
+          const err = errors[r];
+          const empty = untouched(row, r);
+          if (empty && r < rows.length - 1) return null;
+          return (
+            <div key={r} className={`card card-pad col entry-card ${err ? 'invalid' : ''}`}
+              style={{ gap: 'var(--s-3)' }}>
+              <div className="between">
+                <span className="label">
+                  {empty ? 'New entry' : `Entry ${r + 1}`}
+                </span>
+                {!disabled && !empty && (
+                  <button type="button" className="btn btn-ghost btn-sm"
+                    onClick={() => removeRow(r)}>Remove</button>
+                )}
+              </div>
+              <div className="line-grid">
+                {columns.map((col) => (
+                  <div key={col.key} className="field">
+                    <label>
+                      {col.label}
+                      {col.required && <span aria-hidden="true" style={{ color: 'var(--danger)' }}> *</span>}
+                    </label>
+                    <Cell col={col} value={row[col.key]} disabled={disabled}
+                      onChange={(v) => setCell(r, col.key, v)} />
+                    {col.hint && <span className="help">{col.hint}</span>}
+                  </div>
+                ))}
+              </div>
+              {err && <div className="banner banner-danger">{err}</div>}
+            </div>
+          );
+        })}
+
+        <div className="between">
+          <button type="button" className="btn" onClick={addRow} disabled={disabled}>
+            + Add another
+          </button>
+          <span className="tiny muted">
+            {filled} ready{bad > 0 ? ` · ${bad} to fix` : ''}
+          </span>
+        </div>
+        <p className="tiny subtle">
+          The next entry keeps this one's date, colour and fabric — only what
+          changes has to be typed.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="col" style={{ gap: 'var(--s-3)' }}>
@@ -207,7 +297,7 @@ export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate
           <tbody>
             {rows.map((row, r) => {
               const err = errors[r];
-              const empty = isBlankRow(row, columns, blank);
+              const empty = untouched(row, r);
               return (
                 <tr key={r} className={`${err ? 'invalid' : ''} ${!empty && !err ? 'filled' : ''}`}>
                   <td className="bulk-rowno">{r + 1}</td>

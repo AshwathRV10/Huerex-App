@@ -528,6 +528,14 @@ export function registerReports(app: FastifyInstance): void {
           avg_cost: t.order_qty ? r2(cost / t.order_qty) : 0,
           free_excess_cost: r2(excessGiven),
         });
+      } else {
+        // Say "restricted" rather than saying nothing. A caller that cannot
+        // see these needs to be able to tell a withheld figure apart from a
+        // genuine zero, and every other endpoint marks them the same way.
+        Object.assign(base, {
+          order_value__locked: true, total_cost__locked: true, margin__locked: true,
+          margin_pct__locked: true, avg_price__locked: true, avg_cost__locked: true,
+        });
       }
 
       base.verdict = overdue > 0 ? 'Behind'

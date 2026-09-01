@@ -1,0 +1,8 @@
+node_modules
+*/node_modules
+data
+backups
+.git
+web/dist
+server/dist
+*.sqlite*
