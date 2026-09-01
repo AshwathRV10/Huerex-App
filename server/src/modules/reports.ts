@@ -460,8 +460,8 @@ export function registerReports(app: FastifyInstance): void {
         ? Math.round((closed.filter((x) => (x.delay_days ?? 0) <= 0).length / closed.length) * 100) : null;
 
       const appr = one<{ avg: number; pending: number }>(
-        `SELECT AVG(julianday(decided_date) - julianday(sent_date)) AS avg,
-                SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) AS pending
+        `SELECT AVG(julianday(a.decided_date) - julianday(a.sent_date)) AS avg,
+                SUM(CASE WHEN a.status = 'Pending' THEN 1 ELSE 0 END) AS pending
            FROM buyer_approvals a JOIN orders o ON o.id = a.order_id
           WHERE o.buyer = ? AND a.required = 1`, [b.name],
       );

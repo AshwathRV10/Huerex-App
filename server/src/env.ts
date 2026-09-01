@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 function bool(v: string | undefined, dflt: boolean): boolean {
   if (v === undefined) return dflt;
@@ -11,7 +12,17 @@ function int(v: string | undefined, dflt: number): number {
   return Number.isFinite(n) ? n : dflt;
 }
 
-const root = resolve(process.cwd());
+/**
+ * Paths are anchored to the installation, not to the working directory.
+ *
+ * This file lives at <root>/server/src/env.ts in development and
+ * <root>/server/dist/env.js once built, so two levels up is always the
+ * repository root. Deriving it from process.cwd() instead would mean
+ * `npm run seed` (which runs inside server/) and a direct `node dist/index.js`
+ * quietly opened two different database files.
+ */
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, '..', '..');
 
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',

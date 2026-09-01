@@ -6,7 +6,7 @@ import { assertPermission, can } from '../rbac/guard.js';
 import { HttpError, parse, sendCsv, zText } from '../lib/http.js';
 import { computeCostSheet, computeQuantities, type CostResult, type CostSheetInput } from '../engine/costing.js';
 import { effectiveExcessPct, type OrderRow } from '../engine/facts.js';
-import { bestRate, rememberRate, type RateContext } from './rates.js';
+import { bestRate, rememberRate, rememberRateWithFallback, type RateContext } from './rates.js';
 import { learnValue } from './masters.js';
 import { notify } from './notifications.js';
 
@@ -244,15 +244,15 @@ function saveLines(sheetId: number, body: z.infer<typeof SheetBody>, req: Fastif
         );
         learnValue('fabric_components', c.component, userId);
         if (c.vendor) learnValue('vendors', c.vendor, userId);
-        rememberRate(
+        rememberRateWithFallback(
           { kind: 'fabric_component', ...memoBase, fabric_type: line.fabric_type, colour: line.colour, component: c.component, vendor: c.vendor, uom: 'kg' } as RateContext,
-          c.rate_per_kg, { orderNo, costSheetId: sheetId, userId },
+          c.rate_per_kg, ['colour'], { orderNo, costSheetId: sheetId, userId },
         );
       });
       if (line.rate_mode === 'flat') {
-        rememberRate(
+        rememberRateWithFallback(
           { kind: 'fabric_flat', ...memoBase, fabric_type: line.fabric_type, colour: line.colour, uom: 'kg' } as RateContext,
-          line.flat_rate_per_kg, { orderNo, costSheetId: sheetId, userId },
+          line.flat_rate_per_kg, ['colour'], { orderNo, costSheetId: sheetId, userId },
         );
       }
       rememberRate(
@@ -274,9 +274,9 @@ function saveLines(sheetId: number, body: z.infer<typeof SheetBody>, req: Fastif
       );
       learnValue('trim_items', line.trim_item, userId);
       learnValue('trim_uoms', line.uom, userId);
-      rememberRate(
+      rememberRateWithFallback(
         { kind: 'trim', ...memoBase, trim_item: line.trim_item, colour: line.colour, uom: line.uom } as RateContext,
-        line.rate_per_unit, { orderNo, costSheetId: sheetId, userId },
+        line.rate_per_unit, ['colour'], { orderNo, costSheetId: sheetId, userId },
       );
     });
   }
@@ -293,9 +293,9 @@ function saveLines(sheetId: number, body: z.infer<typeof SheetBody>, req: Fastif
       );
       learnValue('jobwork_processes', line.process, userId);
       if (line.vendor) learnValue('vendors', line.vendor, userId);
-      rememberRate(
+      rememberRateWithFallback(
         { kind: 'jobwork', ...memoBase, process: line.process, vendor: line.vendor, colour: line.colour, uom: 'pc' } as RateContext,
-        line.rate_per_pc, { orderNo, costSheetId: sheetId, userId },
+        line.rate_per_pc, ['colour'], { orderNo, costSheetId: sheetId, userId },
       );
     });
   }
@@ -396,6 +396,9 @@ export function proposeSheet(order: OrderRow) {
     remarks: '',
     components: (componentNames.length ? componentNames : ['Yarn', 'Knitting', 'Dyeing', 'Compacting'])
       .map((component) => {
+        // A colour-free memory is a wildcard in the lookup, so this picks the
+        // colour-specific dyeing rate when there is one and the general yarn
+        // and knitting rates otherwise, without a second query.
         const s = bestRate({ kind: 'fabric_component', ...ctx, fabric_type: f.fabric_type, colour: f.colour, component, uom: 'kg' } as RateContext);
         return { component, rate_per_kg: s?.rate ?? 0, vendor: '', loss_pct: 0, remarks: '', _because: s?.because ?? '' };
       }),

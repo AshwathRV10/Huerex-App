@@ -6,6 +6,7 @@ import { migrate } from './migrate.js';
 import { env } from '../env.js';
 import { hashPassword, newToken } from '../auth/password.js';
 import { DEFAULT_ROLES } from '../rbac/permissions.js';
+import { ALERT_CATALOG } from '../engine/alerts.js';
 
 /**
  * Seeding does three separate jobs, and each is safe to re-run:
@@ -89,6 +90,7 @@ const BASE_LISTS: Record<string, string[]> = {
   fabric_parts: ['Body', 'Rib', 'Collar', 'Cuff', 'Pocket', 'Hood', 'Lining', 'Placket'],
   defect_types: ['Stitching', 'Measurement', 'Fabric Fault', 'Printing', 'Embroidery',
     'Stain', 'Shade Variation', 'Trim'],
+  alert_types: ALERT_CATALOG.map((a) => a.type),
 };
 
 function insertList(code: string, values: string[]): number {

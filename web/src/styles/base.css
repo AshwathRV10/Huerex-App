@@ -1,0 +1,130 @@
+/* ==========================================================================
+   Base — reset, typography, and the handful of primitives every screen uses.
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+* { margin: 0; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv05' 1, 'ss03' 1; /* single-storey g, rounded quotes */
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+/* Numbers must line up in a column. This is the whole reason the app is
+   readable at a glance, so it is the default rather than a utility. */
+input[type='number'],
+.num, td.num, th.num, .stat-value, table.data td, table.data th {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'cv05' 1;
+}
+
+h1, h2, h3, h4 {
+  line-height: var(--leading-tight);
+  font-weight: 620;
+  letter-spacing: -0.014em;
+  text-wrap: balance;
+}
+h1 { font-size: var(--text-xl); }
+h2 { font-size: var(--text-lg); }
+h3 { font-size: var(--text-md); }
+h4 { font-size: var(--text-base); }
+
+p { text-wrap: pretty; }
+
+a { color: var(--brand-fg); text-underline-offset: 2px; }
+a:hover { color: var(--brand-hover); }
+
+img, svg { display: block; max-width: 100%; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: var(--radius-sm);
+}
+
+::selection { background: var(--brand-soft); color: var(--brand-fg); }
+
+/* Scrollbars that do not shout. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: var(--fg-subtle); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------- helpers */
+.muted { color: var(--fg-muted); }
+.subtle { color: var(--fg-subtle); }
+.tiny { font-size: var(--text-xs); }
+.mono { font-family: var(--font-mono); font-size: 0.95em; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.right { text-align: right; }
+.center { text-align: center; }
+.grow { flex: 1 1 auto; min-width: 0; }
+.row { display: flex; align-items: center; gap: var(--s-2); }
+.row-wrap { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: var(--s-2); }
+.between { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.hidden { display: none !important; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Skip link, because a keyboard user should not tab the whole rail. */
+.skip-link {
+  position: absolute; left: var(--s-3); top: -60px; z-index: 100;
+  background: var(--surface); border: 1px solid var(--line);
+  padding: var(--s-2) var(--s-4); border-radius: var(--radius);
+  box-shadow: var(--shadow-2); transition: top var(--dur) var(--ease);
+}
+.skip-link:focus { top: var(--s-3); }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.97) translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -139,6 +139,32 @@ export function bestRate(ctx: RateContext): RateSuggestion | undefined {
   return suggestRates(ctx, 1)[0];
 }
 
+/**
+ * Write a rate back to memory at both the scope it was used at and one step
+ * broader.
+ *
+ * Dyeing genuinely moves with the colour, but yarn and knitting do not — and a
+ * memory recorded only against PINK is no use at all on the next order in
+ * LIME. So each rate is stored twice: once bound to the colour (or vendor),
+ * which wins whenever that colour comes round again, and once unbound, which
+ * is offered as a starting point otherwise. The suggestion says which it is,
+ * so nobody mistakes "last dyeing rate we paid, on another colour" for a quote.
+ */
+export function rememberRateWithFallback(
+  ctx: RateContext,
+  rate: number,
+  broaden: (keyof RateContext)[],
+  opts: Parameters<typeof rememberRate>[2] = {},
+): void {
+  rememberRate(ctx, rate, opts);
+  const wider = { ...ctx };
+  let changed = false;
+  for (const key of broaden) {
+    if (wider[key]) { wider[key] = ''; changed = true; }
+  }
+  if (changed) rememberRate(wider, rate, opts);
+}
+
 /** Write a rate back to memory. Called whenever a cost sheet line is saved. */
 export function rememberRate(
   ctx: RateContext, rate: number, opts: { orderNo?: string; costSheetId?: number; userId?: number | null; currency?: string } = {},

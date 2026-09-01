@@ -43,6 +43,7 @@ export const LISTS = [
   { code: 'currencies', label: 'Currencies' },
   { code: 'price_basis', label: 'Price basis' },
   { code: 'defect_types', label: 'Defect types' },
+  { code: 'alert_types', label: 'Alert types' },
 ] as const;
 
 export const LIST_CODES = new Set(LISTS.map((l) => l.code as string));
