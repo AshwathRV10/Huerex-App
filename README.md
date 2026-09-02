@@ -7,6 +7,8 @@ sold for.**
 One Node process, one SQLite file, no cloud dependency. Unplug the internet
 and the factory keeps running.
 
+[![CI](https://github.com/AshwathRV10/Huerex-App/actions/workflows/ci.yml/badge.svg)](https://github.com/AshwathRV10/Huerex-App/actions/workflows/ci.yml)
+
 ---
 
 ## Getting it running
@@ -121,6 +123,13 @@ npm test          # 31 tests over the costing maths and the route walk
 npm run test:rbac # 22 checks that access control holds, against a live server
 npm run typecheck
 ```
+
+All three run on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The access-control
+suite is the reason that file has two jobs: it seeds a throwaway database,
+starts a real server and signs in over HTTP, because the thing being proved —
+that a restricted figure never leaves the machine — cannot be proved without
+one.
 
 ### Ideas the code is built on
 
