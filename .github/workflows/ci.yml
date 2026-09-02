@@ -14,8 +14,10 @@
 name: CI
 
 on:
+  # Only main on push. Everything else arrives as a pull request, and listening
+  # for both would run every branch commit twice for the same answer.
   push:
-    branches: [main, 'claude/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
