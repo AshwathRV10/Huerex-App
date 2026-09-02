@@ -273,6 +273,7 @@ Move when you have a reason, not before.
 | Symptom | Where to look |
 | --- | --- |
 | Nobody can sign in | `COOKIE_SECURE=true` on plain HTTP. Set it to false, or put TLS in front. |
+| A blank white page on other machines, fine on the server itself | The browser was told to upgrade its requests to HTTPS. Fixed in v6.0.1 — upgrade, or check `Content-Security-Policy` on the response for `upgrade-insecure-requests`, which must not be there on a plain-HTTP LAN. The tab title appears and nothing else does, because the shell loads and the scripts do not. |
 | "Too many attempts" | The account is locked for `LOCKOUT_MINUTES`. An administrator can unlock it on Users. |
 | Numbers look wrong | **Data audit** first, then **Reconciliation**. They will name the entry that contradicts another one. |
 | A screen is missing from the menu | The role does not include it. Users → Roles → Review access. |
