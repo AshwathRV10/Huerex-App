@@ -146,6 +146,66 @@ export function setupIssues(order: OrderRow): string[] {
 
 export function registerOrders(app: FastifyInstance): void {
   // ------------------------------------------------------------------- list
+/**
+ * Everything an order owns, in the order a person would want to read it.
+ *
+ * `history` marks the tables that record work that actually happened on the
+ * floor, as opposed to setup a person typed in. Losing setup is an
+ * inconvenience; losing history changes what the factory believes it made.
+ */
+const OWNED_BY_ORDER: { table: string; label: string; history: boolean }[] = [
+  { table: 'cutting', label: 'cutting entries', history: true },
+  { table: 'fusing', label: 'fusing entries', history: true },
+  { table: 'job_work', label: 'job-work movements', history: true },
+  { table: 'sewing', label: 'sewing entries', history: true },
+  { table: 'checking', label: 'checking entries', history: true },
+  { table: 'packing', label: 'packing entries', history: true },
+  { table: 'inspection', label: 'inspections', history: true },
+  { table: 'shipment', label: 'shipments', history: true },
+  { table: 'trims', label: 'trim receipts', history: true },
+  { table: 'fabric_manual_consumption', label: 'weighed consumption', history: true },
+  { table: 'cost_sheets', label: 'cost sheets', history: false },
+  { table: 'buyer_approvals', label: 'buyer approvals', history: false },
+  { table: 'alert_waivers', label: 'alert waivers', history: false },
+  { table: 'order_route', label: 'route steps', history: false },
+  { table: 'order_matrix', label: 'colour \u00d7 size cells', history: false },
+];
+
+interface DeletionImpact {
+  rows: { table: string; label: string; history: boolean; count: number }[];
+  /** Issued fabric returns to free stock rather than being destroyed. */
+  fabric_movements: number;
+  total: number;
+  has_history: boolean;
+}
+
+/** What deleting this order would take with it, counted before anything goes. */
+function deletionImpact(orderId: number): DeletionImpact {
+  const rows = OWNED_BY_ORDER
+    .map((t) => ({
+      ...t,
+      count: one<{ c: number }>(`SELECT COUNT(*) AS c FROM ${t.table} WHERE order_id = ?`, [orderId])!.c,
+    }))
+    .filter((t) => t.count > 0);
+
+  return {
+    rows,
+    fabric_movements: one<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM fabric_ledger WHERE order_id = ?', [orderId],
+    )!.c,
+    total: rows.reduce((n, t) => n + t.count, 0),
+    has_history: rows.some((t) => t.history),
+  };
+}
+
+/** The impact as one readable clause, for the refusal message. */
+function describe(impact: DeletionImpact): string {
+  return impact.rows
+    .filter((r) => r.history)
+    .map((r) => `${r.count} ${r.label}`)
+    .join(', ');
+}
+
   app.get('/api/orders', async (req: FastifyRequest, reply: FastifyReply) => {
     assertPermission(req, 'orders.view');
     const q = req.query as Record<string, string>;
@@ -272,23 +332,50 @@ export function registerOrders(app: FastifyInstance): void {
     return reply.send(redact(req, after as unknown as Record<string, unknown>, ORDER_SPEC));
   });
 
+  app.get('/api/orders/:orderNo/delete-preview', async (req: FastifyRequest, reply: FastifyReply) => {
+    assertPermission(req, 'orders.delete');
+    const order = findOrder((req.params as { orderNo: string }).orderNo);
+    return reply.send(deletionImpact(order.id));
+  });
+
   app.delete('/api/orders/:orderNo', async (req: FastifyRequest, reply: FastifyReply) => {
     assertPermission(req, 'orders.delete');
     const before = findOrder((req.params as { orderNo: string }).orderNo);
-    const cut = one<{ q: number }>('SELECT COALESCE(SUM(cut_qty),0) AS q FROM cutting WHERE order_id = ?', [before.id])!.q;
-    if (cut > 0) {
+    const impact = deletionImpact(before.id);
+    const confirmed = (req.query as { confirm?: string }).confirm === before.order_no;
+
+    /**
+     * An order nobody has worked on goes quietly. One with production against
+     * it takes the order number typed back, because deleting it silently
+     * rewrites WIP, reconciliation and the buyer's book — every report the
+     * order appears in changes, and there is no undo short of last night's
+     * backup.
+     */
+    if (impact.has_history && !confirmed) {
       throw new HttpError(
         409,
-        `${before.order_no} has ${cut} pieces cut against it. Set the status to Cancelled instead — deleting it would erase the history.`,
-        'has_history',
+        `${before.order_no} has work logged against it: ${describe(impact)}. `
+        + 'Deleting it removes all of that permanently and changes every report it appears in. '
+        + 'Setting the status to Cancelled keeps the history. To delete it anyway, confirm with the order number.',
+        'needs_confirmation',
       );
     }
-    run('DELETE FROM orders WHERE id = ?', [before.id]);
+
+    // One transaction: every child table cascades from this single statement,
+    // so the order and its history go together or not at all.
+    tx(() => run('DELETE FROM orders WHERE id = ?', [before.id]));
+
     audit(req, {
       action: 'delete', entity: 'orders', entityId: before.id,
-      summary: `Deleted order ${before.order_no}`, before, severity: 'warning',
+      summary: impact.total > 0
+        ? `Deleted order ${before.order_no} and ${impact.total} attached records`
+        : `Deleted order ${before.order_no}`,
+      // The impact travels with the order in the audit row, because once this
+      // returns the counts cannot be recovered from anywhere but a backup.
+      before: { ...before, deleted_with: impact.rows, fabric_movements_released: impact.fabric_movements },
+      severity: impact.has_history ? 'critical' : 'warning',
     });
-    return reply.send({ deleted: true });
+    return reply.send({ deleted: true, removed: impact });
   });
 
   // ------------------------------------------------------------------- route
