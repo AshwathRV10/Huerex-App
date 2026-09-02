@@ -400,7 +400,10 @@ export function proposeSheet(order: OrderRow) {
         // colour-specific dyeing rate when there is one and the general yarn
         // and knitting rates otherwise, without a second query.
         const s = bestRate({ kind: 'fabric_component', ...ctx, fabric_type: f.fabric_type, colour: f.colour, component, uom: 'kg' } as RateContext);
-        return { component, rate_per_kg: s?.rate ?? 0, vendor: '', loss_pct: 0, remarks: '', _because: s?.because ?? '' };
+        return {
+          component, rate_per_kg: s?.rate ?? 0, vendor: '', loss_pct: 0, remarks: '',
+          _because: s?.because ?? '', _placeholder: s?.placeholder ?? false,
+        };
       }),
   }));
 
@@ -417,7 +420,8 @@ export function proposeSheet(order: OrderRow) {
     return {
       process: s.process, vendor: lastVendor, colour: '', step_no: s.step_no,
       rate_per_pc: sug?.rate ?? 0, applies_qty_pct: 100, vendor_loss_pct: 0,
-      freight_per_order: 0, remarks: '', _because: sug?.because ?? '',
+      freight_per_order: 0, remarks: '',
+      _because: sug?.because ?? '', _placeholder: sug?.placeholder ?? false,
     };
   });
 
@@ -434,7 +438,8 @@ export function proposeSheet(order: OrderRow) {
         operation, basis, rate: sug?.rate ?? 0,
         sam_min: isSewing ? order.sam : 0,
         efficiency_pct: isSewing ? 65 : 100,
-        applies_qty_pct: 100, remarks: '', _because: sug?.because ?? '',
+        applies_qty_pct: 100, remarks: '',
+        _because: sug?.because ?? '', _placeholder: sug?.placeholder ?? false,
       };
     });
 
@@ -450,7 +455,8 @@ export function proposeSheet(order: OrderRow) {
     return {
       trim_item, colour: '', size: '', uom: 'pcs', qty_per_pc: 1,
       rate_per_unit: sug?.rate ?? 0, wastage_pct: 2, applies_qty_pct: 100,
-      supplier: '', remarks: '', _because: sug?.because ?? '',
+      supplier: '', remarks: '',
+      _because: sug?.because ?? '', _placeholder: sug?.placeholder ?? false,
     };
   });
 
@@ -461,7 +467,10 @@ export function proposeSheet(order: OrderRow) {
   const overheads = (ohCats.length ? ohCats : ['Sampling', 'Lab Test', 'Documentation', 'Transportation'])
     .map((category) => {
       const sug = bestRate({ kind: 'overhead', ...ctx, category, uom: 'per_order' } as RateContext);
-      return { category, basis: 'per_order' as const, amount: sug?.rate ?? 0, vendor: '', remarks: '', _because: sug?.because ?? '' };
+      return {
+        category, basis: 'per_order' as const, amount: sug?.rate ?? 0, vendor: '', remarks: '',
+        _because: sug?.because ?? '', _placeholder: sug?.placeholder ?? false,
+      };
     });
 
   const priceSug = bestRate({ kind: 'selling_price', ...ctx, uom: 'pc' } as RateContext);
@@ -474,6 +483,7 @@ export function proposeSheet(order: OrderRow) {
     fx_rate: order.fx_rate,
     selling_price_per_pc: priceSug?.rate ?? 0,
     selling_price_because: priceSug?.because ?? '',
+    selling_price_placeholder: priceSug?.placeholder ?? false,
     fabric, trims, jobwork, cmt, overheads,
   };
 }

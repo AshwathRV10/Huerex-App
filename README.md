@@ -62,6 +62,11 @@ factory: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 - **Plan against actual**, using the kilograms the store really issued and the
   pieces the vendors really got.
 
+Seeding adds about a dozen **starting-point rates** so the first sheet is not
+a page of zeroes. Nobody has quoted them, so they are marked in amber
+everywhere they appear and the marker only clears when somebody types a
+different number. Replace them before any sheet reaches a buyer.
+
 **[docs/COSTING.md](docs/COSTING.md)** explains the model.
 
 **A fabric store with a balance.** The workbook could show kilograms in and

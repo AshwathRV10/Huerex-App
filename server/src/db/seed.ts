@@ -7,6 +7,7 @@ import { env } from '../env.js';
 import { hashPassword, newToken } from '../auth/password.js';
 import { DEFAULT_ROLES } from '../rbac/permissions.js';
 import { ALERT_CATALOG } from '../engine/alerts.js';
+import { PLACEHOLDER_ORDER } from '../modules/rates.js';
 
 /**
  * Seeding does three separate jobs, and each is safe to re-run:
@@ -430,12 +431,13 @@ function seedRateStarters(): void {
     for (const [kind, ctx, rate] of starters) {
       run(
         `INSERT OR IGNORE INTO rate_memory (kind, operation, category, uom, rate, use_count, last_order_no)
-         VALUES (?,?,?,?,?,0,'starting point')`,
-        [kind, ctx.operation ?? '', ctx.category ?? '', ctx.uom ?? '', rate],
+         VALUES (?,?,?,?,?,0,?)`,
+        [kind, ctx.operation ?? '', ctx.category ?? '', ctx.uom ?? '', rate, PLACEHOLDER_ORDER],
       );
     }
   });
-  log('  rates: starting points added (replaced as soon as real rates are entered)');
+  log('  rates: starting points added — flagged everywhere they are offered, and');
+  log('         no longer flagged once somebody uses them on a real order');
 }
 
 // ------------------------------------------------------------------------ run

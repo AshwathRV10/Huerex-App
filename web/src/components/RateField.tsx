@@ -22,7 +22,10 @@ export interface RateContext {
 
 interface Suggestion {
   id: number; rate: number; currency: string; uom: string;
-  use_count: number; last_order_no: string; because: string; exact: boolean;
+  use_count: number; last_order_no: string; because: string;
+  /** a rate the app shipped with, not one this factory has quoted */
+  placeholder: boolean;
+  exact: boolean;
 }
 
 interface Props {
@@ -58,7 +61,14 @@ export function RateField({
   const best = data?.[0];
   const emptyValue = !value || value === 0;
   const differs = best !== undefined && Math.abs(best.rate - value) > 0.0001;
-  const show = Boolean(best) && !disabled && (emptyValue || (always && differs) || (touched && differs));
+
+  // The field is already carrying a rate the app shipped with. This is the
+  // case that most needs saying out loud: the number looks like every other
+  // number on the sheet, and it is the one nobody has ever quoted.
+  const holdingPlaceholder = Boolean(best?.placeholder) && !emptyValue && !differs;
+
+  const show = Boolean(best) && !disabled
+    && (emptyValue || holdingPlaceholder || (always && differs) || (touched && differs));
 
   return (
     <div className={`field rate-field ${className ?? ''}`}>
@@ -82,15 +92,25 @@ export function RateField({
       </div>
 
       {show && best && (
-        <button
-          type="button"
-          className="rate-because"
-          title="Use this remembered rate"
-          onClick={() => onChange(best.rate)}
-        >
-          <span className="memo">{prefix}{best.rate}</span>
-          <span className="truncate">{best.because}</span>
-        </button>
+        holdingPlaceholder ? (
+          // Nothing to click — the value is already this. It is a caution, not an offer.
+          <span className="rate-because is-placeholder" role="note">
+            <span className="memo">!</span>
+            <span className="truncate">A starting point — replace with your real rate</span>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={`rate-because ${best.placeholder ? 'is-placeholder' : ''}`}
+            title={best.placeholder
+              ? 'A starting point the app shipped with. Use it only until you know the real rate.'
+              : 'Use this remembered rate'}
+            onClick={() => onChange(best.rate)}
+          >
+            <span className="memo">{prefix}{best.rate}</span>
+            <span className="truncate">{best.because}</span>
+          </button>
+        )
       )}
     </div>
   );

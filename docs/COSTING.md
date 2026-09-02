@@ -134,6 +134,31 @@ The whole library is on **Rate library**, with the history of every change:
 who changed it, on which order, and what it was before. That screen answers
 "why is this order dearer than the last one".
 
+### Starting points, and how to tell them apart
+
+Seeding adds about a dozen **starting points** — a cutting rate, a sewing rate
+per minute, a figure for sampling and lab tests. They exist so the very first
+cost sheet has a shape to argue with instead of a page of zeroes. **Nobody has
+quoted them.**
+
+They are marked wherever they appear, in amber:
+
+- the **Rate library** carries a banner and a "starting point" badge on each
+  one, and shows *never used · shipped with the app* instead of a date;
+- the **proposal** shown before a sheet exists counts them and says so;
+- inside the **cost sheet**, a field still carrying one reads
+  *"A starting point — replace with your real rate"* under the number.
+
+The marker clears when somebody types a **different** number — not when a
+sheet merely carries the default along. Accepting a placeholder unchanged does
+not make it a quote, and clearing the flag then would hide the warning at the
+one moment it is worth having. For the same reason, a buyer-specific memory
+created from a shipped default inherits the marker, so the number cannot
+quietly launder itself into looking quoted by being copied.
+
+Replace them with your own rates before any sheet goes to a buyer. Editing one
+in the Rate library, or simply typing over it on a cost sheet, is enough.
+
 Starting a sheet on an order that has never been costed proposes:
 
 - the fabric it is actually being cut from, at the piece weight cutting logged;

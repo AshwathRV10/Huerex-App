@@ -54,6 +54,13 @@ roles and the master lists and leaves the factory's data alone.
 To start completely empty instead, delete `server/seed/workbook.json` before
 seeding, or point `SEED_FILE` at a different file.
 
+Seeding also adds about a dozen **starting-point rates** — a cutting rate, a
+sewing rate per minute, figures for sampling and lab tests — so the first cost
+sheet has something to argue with. Nobody has quoted them. They are marked in
+amber on the Rate library, on the cost-sheet proposal and inside the sheet
+itself, and stop being marked as soon as somebody types a real number over
+one. Replace them before quoting anything to a buyer.
+
 ---
 
 ## 3. Settings

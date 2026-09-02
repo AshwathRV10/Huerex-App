@@ -20,6 +20,24 @@ import { HttpError, parse, sendCsv, zText } from '../lib/http.js';
  * with Enter or types over it. Typing over it teaches the next order.
  */
 
+/**
+ * Rates the installation shipped with rather than ones this factory has
+ * quoted. They exist so the very first cost sheet has a shape to argue with
+ * instead of a page of zeroes — but a placeholder that reaches a buyer as a
+ * quotation is worse than no number at all, so every screen that offers one
+ * says what it is.
+ *
+ * The marker clears when somebody types a different number, not when a sheet
+ * merely carries the default along: accepting a placeholder unchanged does not
+ * make it a quote, and clearing the flag then would hide the warning at the
+ * one moment it is worth having.
+ */
+export const PLACEHOLDER_ORDER = 'starting point';
+
+export function isPlaceholder(row: { use_count: number; last_order_no: string }): boolean {
+  return row.use_count === 0 && row.last_order_no === PLACEHOLDER_ORDER;
+}
+
 export const RATE_KINDS = [
   'fabric_component', 'fabric_flat', 'trim', 'jobwork', 'cmt', 'overhead',
   'selling_price', 'consumption',
@@ -55,6 +73,8 @@ export interface RateSuggestion {
   last_order_no: string;
   /** plain-English reason the app is offering this number */
   because: string;
+  /** true when this is a shipped default nobody has ever quoted */
+  placeholder: boolean;
   exact: boolean;
   matched: Record<string, string>;
 }
@@ -78,6 +98,7 @@ function ago(iso: string): string {
 }
 
 function describeMatch(row: RateRow, matched: Record<string, string>): string {
+  if (isPlaceholder(row)) return 'a starting point the app shipped with — nobody has quoted this';
   const parts: string[] = [];
   if (matched.style) parts.push(`style ${matched.style}`);
   else if (matched.buyer) parts.push(matched.buyer);
@@ -124,6 +145,7 @@ export function suggestRates(ctx: RateContext, limit = 5): RateSuggestion[] {
         score, use_count: row.use_count, last_used_at: row.last_used_at,
         last_order_no: row.last_order_no,
         because: describeMatch(row, matched),
+        placeholder: isPlaceholder(row),
         exact: DIMENSIONS.every((d) => {
           const ctxVal = (ctx as Record<string, string | undefined>)[d] ?? '';
           return (row as unknown as Record<string, string>)[d] === ctxVal;
@@ -174,8 +196,8 @@ export function rememberRate(
   const currency = opts.currency ?? 'INR';
 
   tx(() => {
-    const existing = one<{ id: number; rate: number }>(
-      `SELECT id, rate FROM rate_memory
+    const existing = one<{ id: number; rate: number; use_count: number; last_order_no: string }>(
+      `SELECT id, rate, use_count, last_order_no FROM rate_memory
         WHERE kind = ? AND buyer = ? AND style = ? AND fabric_type = ? AND colour = ?
           AND trim_item = ? AND process = ? AND vendor = ? AND component = ?
           AND operation = ? AND category = ? AND uom = ?`,
@@ -187,18 +209,40 @@ export function rememberRate(
     if (existing) {
       previous = existing.rate;
       id = existing.id;
-      run(
-        `UPDATE rate_memory SET rate = ?, currency = ?, use_count = use_count + 1,
-                last_used_at = datetime('now'), last_order_no = ? WHERE id = ?`,
-        [rate, currency, opts.orderNo ?? '', id],
-      );
+
+      // Carrying a shipped default through a sheet unchanged is not the same
+      // as quoting it. Leaving the marker alone until somebody actually types
+      // a different number is what stops the warning evaporating on first use,
+      // which is exactly when it matters most.
+      const stillAPlaceholder = isPlaceholder(existing) && Math.abs(existing.rate - rate) < 1e-9;
+      if (stillAPlaceholder) {
+        run(`UPDATE rate_memory SET last_used_at = datetime('now') WHERE id = ?`, [id]);
+      } else {
+        run(
+          `UPDATE rate_memory SET rate = ?, currency = ?, use_count = use_count + 1,
+                  last_used_at = datetime('now'), last_order_no = ? WHERE id = ?`,
+          [rate, currency, opts.orderNo ?? '', id],
+        );
+      }
     } else {
+      // A narrower memory built from a shipped default is still a shipped
+      // default. Without this, saving a proposed sheet would mint a
+      // buyer-specific copy that outranks the placeholder in every later
+      // lookup and no longer carries the warning — the number would quietly
+      // launder itself into looking quoted.
+      const inherited = suggestRates(ctx, 3).find(
+        (candidate) => candidate.placeholder && Math.abs(candidate.rate - rate) < 1e-9,
+      );
+
       const info = run(
         `INSERT INTO rate_memory (kind, buyer, style, fabric_type, colour, trim_item, process,
                                   vendor, component, operation, category, uom, rate, currency,
-                                  last_order_no, created_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [ctx.kind, ...reorder(vals), rate, currency, opts.orderNo ?? '', opts.userId ?? null],
+                                  use_count, last_order_no, created_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [ctx.kind, ...reorder(vals), rate, currency,
+          inherited ? 0 : 1,
+          inherited ? PLACEHOLDER_ORDER : (opts.orderNo ?? ''),
+          opts.userId ?? null],
       );
       id = info.lastInsertRowid as number;
     }

@@ -278,6 +278,14 @@ table.data .cell-sub { display: block; font-size: var(--text-2xs); color: var(--
   font-variant-numeric: tabular-nums;
 }
 
+/* A rate the app shipped with reads as a caution, not as a recommendation. */
+.rate-because.is-placeholder { color: var(--warn-fg); }
+.rate-because.is-placeholder:hover { color: var(--warn-fg); }
+.rate-because.is-placeholder .memo {
+  background: var(--warn-soft); color: var(--warn-fg);
+  border: 1px dashed var(--warn-line);
+}
+
 /* ---------------------------------------------------------------- modal */
 .overlay {
   position: fixed; inset: 0; z-index: 90;

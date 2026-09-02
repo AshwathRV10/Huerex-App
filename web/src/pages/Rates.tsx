@@ -15,6 +15,11 @@ import { ago, dateTime, money } from '../lib/format';
  * order is dearer than the last one.
  */
 
+const PLACEHOLDER_ORDER = 'starting point';
+
+/** Shipped with the app, never used on a real order — see the banner below. */
+const isPlaceholder = (r: RateRow) => r.use_count === 0 && r.last_order_no === PLACEHOLDER_ORDER;
+
 interface RateRow {
   id: number; kind: string; buyer: string; style: string; fabric_type: string;
   colour: string; trim_item: string; process: string; vendor: string;
@@ -38,6 +43,29 @@ const KINDS = [
 function subject(r: RateRow): string {
   return [r.fabric_type, r.trim_item, r.process, r.operation, r.category, r.component]
     .filter(Boolean).join(' · ') || '—';
+}
+
+/**
+ * The unit column doubles as the basis for CMT and overhead rates, where the
+ * stored value is `per_pc` or `pct_of_cost`. Printing those raw gives "per
+ * per_pc", so they are spelled out.
+ */
+const UOM_LABELS: Record<string, string> = {
+  per_pc: 'per piece',
+  per_order: 'for the order',
+  per_sam_min: 'per SAM minute',
+  pct_of_cost: '% of cost',
+  pct_of_revenue: '% of revenue',
+  kg: 'per kg',
+  pc: 'per piece',
+  pcs: 'per piece',
+  g: 'grams per piece',
+  min: 'per minute',
+};
+
+function unit(uom: string): string {
+  if (!uom) return '';
+  return UOM_LABELS[uom] ?? `per ${uom}`;
 }
 
 function scope(r: RateRow): string {
@@ -71,6 +99,7 @@ export function RatesPage() {
   });
 
   const rows = data ?? [];
+  const placeholders = rows.filter(isPlaceholder).length;
 
   return (
     <>
@@ -94,6 +123,20 @@ export function RatesPage() {
         <span className="tiny muted">{rows.length} remembered</span>
       </div>
 
+      {placeholders > 0 && (
+        <div className="banner banner-warn">
+          <Icon.Alert size={18} />
+          <div>
+            <b>{placeholders} of these are starting points the app shipped with, not rates
+            anyone here has quoted.</b>{' '}
+            They exist so the first cost sheet has something to argue with instead of a page of
+            zeroes. Replace them with your real rates — editing one here, or simply typing over
+            it on a cost sheet, is enough. A rate stops being marked as a starting point the
+            moment it is used on a real order.
+          </div>
+        </div>
+      )}
+
       {isLoading ? <Loading rows={8} />
         : rows.length === 0 ? (
           <div className="card">
@@ -114,17 +157,30 @@ export function RatesPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td className="row-title" data-label="What"><b>{subject(r)}</b></td>
+                    <td className="row-title" data-label="What">
+                      <b>{subject(r)}</b>
+                      {isPlaceholder(r) && (
+                        <span className="badge badge-warn" style={{ marginLeft: 6 }}>starting point</span>
+                      )}
+                    </td>
                     <td data-label="Where">{scope(r)}</td>
                     <td data-label="Kind"><span className="badge">{r.kind.replace(/_/g, ' ')}</span></td>
                     <td className="num strong" data-label="Rate">
                       {r.currency === 'INR' ? money(r.rate) : `${r.rate} ${r.currency}`}
-                      {r.uom && <span className="cell-sub">per {r.uom}</span>}
+                      {r.uom && <span className="cell-sub">{unit(r.uom)}</span>}
                     </td>
-                    <td className="num" data-label="Used">{r.use_count}×</td>
+                    <td className="num" data-label="Used">
+                      {isPlaceholder(r) ? <span className="subtle">never</span> : `${r.use_count}×`}
+                    </td>
                     <td className="num" data-label="Last used">
-                      {ago(r.last_used_at)}
-                      {r.last_order_no && <span className="cell-sub">{r.last_order_no}</span>}
+                      {isPlaceholder(r)
+                        ? <span className="subtle">shipped with the app</span>
+                        : (
+                          <>
+                            {ago(r.last_used_at)}
+                            {r.last_order_no && <span className="cell-sub">{r.last_order_no}</span>}
+                          </>
+                        )}
                     </td>
                     <td data-label="">
                       <div className="row">
@@ -213,12 +269,18 @@ function EditRateModal({ rate, onClose, onSave, busy }: {
       }
     >
       <div className="col" style={{ gap: 'var(--s-4)' }}>
+        {isPlaceholder(rate) && (
+          <div className="banner banner-warn">
+            This is a starting point the app shipped with. Putting your real rate in is exactly
+            what it is here for.
+          </div>
+        )}
         <p className="muted tiny">
           Changing it here does not touch any cost sheet that has already been built — those keep the
           rate they were saved with. It changes what the app offers next time.
         </p>
         <div className="field" style={{ maxWidth: 220 }}>
-          <label>Rate per {rate.uom || 'unit'}</label>
+          <label>Rate {unit(rate.uom) || 'per unit'}</label>
           <input type="number" className="input input-num" step={0.01} value={value}
             onChange={(e) => setValue(Number(e.target.value))} autoFocus />
         </div>

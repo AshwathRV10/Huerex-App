@@ -12,27 +12,32 @@ import { compactMoney, money, pct, qty } from '../lib/format';
 
 /* ------------------------------------------------------------------ types */
 
-interface Component { component: string; rate_per_kg: number; vendor: string; loss_pct: number; remarks: string }
-interface FabricLine {
+/** Proposed lines carry two extra fields the editor never saves back. */
+interface Proposed { _because?: string; _placeholder?: boolean }
+
+interface Component extends Proposed {
+  component: string; rate_per_kg: number; vendor: string; loss_pct: number; remarks: string;
+}
+interface FabricLine extends Proposed {
   fabric_type: string; colour: string; part: string; gsm: number;
   consumption_g_per_pc: number; wastage_pct: number;
   rate_mode: 'buildup' | 'flat'; flat_rate_per_kg: number;
   applies_qty_pct: number; supplier: string; remarks: string; components: Component[];
 }
-interface TrimLine {
+interface TrimLine extends Proposed {
   trim_item: string; colour: string; size: string; uom: string; qty_per_pc: number;
   rate_per_unit: number; wastage_pct: number; applies_qty_pct: number; supplier: string; remarks: string;
 }
-interface JobWorkLine {
+interface JobWorkLine extends Proposed {
   process: string; vendor: string; colour: string; step_no: number | null;
   rate_per_pc: number; applies_qty_pct: number; vendor_loss_pct: number;
   freight_per_order: number; remarks: string;
 }
-interface CmtLine {
+interface CmtLine extends Proposed {
   operation: string; basis: 'per_pc' | 'per_order' | 'per_sam_min' | 'pct_of_cost';
   rate: number; sam_min: number; efficiency_pct: number; applies_qty_pct: number; remarks: string;
 }
-interface OverheadLine {
+interface OverheadLine extends Proposed {
   category: string; basis: 'per_pc' | 'per_order' | 'pct_of_cost' | 'pct_of_revenue';
   amount: number; vendor: string; remarks: string;
 }
@@ -80,7 +85,7 @@ interface SheetPayload {
     fabric: FabricLine[]; trims: TrimLine[]; jobwork: JobWorkLine[];
     cmt: CmtLine[]; overheads: OverheadLine[]; prices: unknown[];
   };
-  proposal?: Draft & { selling_price_because?: string };
+  proposal?: Draft & { selling_price_because?: string; selling_price_placeholder?: boolean };
 }
 
 interface Draft {
@@ -890,24 +895,66 @@ function OverheadBlock({ draft, patch, editable, memoryCtx, block }: {
 
 /* ------------------------------------------------------------- the preview */
 
-function ProposalPreview({ proposal }: { proposal: Draft & { selling_price_because?: string } }) {
-  const rows = [
-    ['Fabric', proposal.fabric.map((f) => `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''} at ${f.consumption_g_per_pc} g/pc`)],
-    ['Job work', proposal.jobwork.map((j) => `${j.process}${j.vendor ? ` at ${j.vendor}` : ''}${j.rate_per_pc ? ` — ₹${j.rate_per_pc}/pc` : ''}`)],
-    ['CMT', proposal.cmt.map((c) => `${c.operation}${c.rate ? ` — ₹${c.rate}` : ''}`)],
-    ['Other costs', proposal.overheads.map((o) => `${o.category}${o.amount ? ` — ₹${o.amount}` : ''}`)],
-  ] as const;
+function ProposalPreview({ proposal }: {
+  proposal: Draft & { selling_price_because?: string; selling_price_placeholder?: boolean };
+}) {
+  type Item = { text: string; placeholder: boolean };
+  const rows: [string, Item[]][] = [
+    ['Fabric', proposal.fabric.map((f) => ({
+      text: `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''} at ${f.consumption_g_per_pc} g/pc`,
+      placeholder: (f.components ?? []).some((c) => c._placeholder),
+    }))],
+    ['Job work', proposal.jobwork.map((j) => ({
+      text: `${j.process}${j.vendor ? ` at ${j.vendor}` : ''}${j.rate_per_pc ? ` — ₹${j.rate_per_pc}/pc` : ''}`,
+      placeholder: Boolean(j._placeholder),
+    }))],
+    ['CMT', proposal.cmt.map((c) => ({
+      text: `${c.operation}${c.rate ? ` — ₹${c.rate}` : ''}`,
+      placeholder: Boolean(c._placeholder),
+    }))],
+    ['Other costs', proposal.overheads.map((o) => ({
+      text: `${o.category}${o.amount ? ` — ₹${o.amount}` : ''}`,
+      placeholder: Boolean(o._placeholder),
+    }))],
+  ];
+
+  const placeholders = rows.reduce((n, [, items]) => n + items.filter((i) => i.placeholder).length, 0)
+    + (proposal.selling_price_placeholder ? 1 : 0);
 
   return (
     <div className="col" style={{ gap: 'var(--s-3)' }}>
       <span className="label">What the draft will contain</span>
+
+      {placeholders > 0 && (
+        <div className="banner banner-warn">
+          <Icon.Alert size={18} />
+          <div>
+            <b>
+              {placeholders} of these {placeholders === 1 ? 'rate is a starting point' : 'rates are starting points'}
+              {' '}the app shipped with — nobody has quoted {placeholders === 1 ? 'it' : 'them'}.
+            </b>{' '}
+            They are here so the sheet has a shape to argue with rather than a page of zeroes.
+            Replace them with your real rates before this sheet is quoted to a buyer; they are
+            marked in amber wherever they appear, and stop being marked the moment you use one
+            on a real order.
+          </div>
+        </div>
+      )}
+
       <div className="grid-3">
         {rows.map(([title, items]) => (
           <div key={title} className="card card-pad col" style={{ gap: 6, background: 'var(--bg-sunken)' }}>
             <b className="tiny">{title}</b>
             {items.length === 0
               ? <span className="tiny subtle">nothing proposed</span>
-              : items.slice(0, 8).map((t) => <span key={t} className="tiny muted">{t}</span>)}
+              : items.slice(0, 8).map((i) => (
+                <span key={i.text} className="tiny muted">
+                  {i.text}
+                  {i.placeholder && (
+                    <span className="badge badge-warn" style={{ marginLeft: 6 }}>starting point</span>
+                  )}
+                </span>
+              ))}
           </div>
         ))}
       </div>
