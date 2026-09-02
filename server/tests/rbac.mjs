@@ -21,7 +21,15 @@ function jar() {
 async function call(cookies, method, path, body) {
   const res = await fetch(B + path, {
     method,
-    headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin', cookie: cookies.get() },
+    // Only declare a JSON body when there is one. Sending the content-type on
+    // a bodyless DELETE makes Fastify reject it at 400 before any route runs,
+    // which would hide the status the permission check actually returns — and
+    // the browser client does not send it either.
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      'sec-fetch-site': 'same-origin',
+      cookie: cookies.get(),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   cookies.set(res);
@@ -124,6 +132,56 @@ console.log('test users ready\n');
     code: 'sneaky', name: 'Sneaky', permissions: ['costing.view', 'costing.margin.view'],
   });
   check('cannot mint a role that grants themselves costing', role.status === 403, `got ${role.status}`);
+
+  // Deleting an order is for administrators and management only. A
+  // merchandiser runs the order book all day and must not be able to remove
+  // one, by the API or by guessing the URL.
+  const del = await call(u, 'DELETE', '/api/orders/HR-002');
+  check('cannot delete an order', del.status === 403, `got ${del.status}`);
+  const forced = await call(u, 'DELETE', '/api/orders/HR-002?confirm=HR-002');
+  check('cannot delete an order by supplying the confirmation itself',
+    forced.status === 403, `got ${forced.status}`);
+  const preview = await call(u, 'GET', '/api/orders/HR-002/delete-preview');
+  check('cannot even see what deleting one would remove', preview.status === 403, `got ${preview.status}`);
+  check('and the order is still there',
+    (await call(u, 'GET', '/api/orders/HR-002')).status === 200);
+  console.log();
+}
+
+// ------------------------------------------------- deleting orders, allowed
+{
+  console.log('an administrator deleting an order:');
+
+  // An order with production against it is refused until it is confirmed by
+  // name, so a stray DELETE cannot take the floor's history with it.
+  const withHistory = await call(admin, 'DELETE', '/api/orders/HR-002');
+  check('an order with history is refused without confirmation',
+    withHistory.status === 409 && withHistory.json?.code === 'needs_confirmation',
+    `got ${withHistory.status} ${withHistory.json?.code ?? ''}`);
+  check('the refusal names what would be lost',
+    typeof withHistory.json?.error === 'string' && /cutting entries|job-work movements/.test(withHistory.json.error),
+    withHistory.json?.error?.slice(0, 80));
+  check('and it survived being refused',
+    (await call(admin, 'GET', '/api/orders/HR-002')).status === 200);
+
+  check('a wrong confirmation is still refused',
+    (await call(admin, 'DELETE', '/api/orders/HR-002?confirm=HR-003')).status === 409);
+
+  // A fresh order nobody has touched goes without ceremony.
+  const made = await call(admin, 'POST', '/api/orders', {
+    order_no: 'E2E-DELETE-ME', buyer: 'BABY SHOP - VIGASH', style: 'throwaway',
+    order_qty: 10, status: 'Active',
+  });
+  check('a throwaway order can be created', made.status === 201, `got ${made.status}`);
+  const clean = await call(admin, 'DELETE', '/api/orders/E2E-DELETE-ME');
+  check('an order with no history deletes without confirmation', clean.status === 200, `got ${clean.status}`);
+  check('and it is gone', (await call(admin, 'GET', '/api/orders/E2E-DELETE-ME')).status === 404);
+
+  const trail = await call(admin, 'GET', '/api/audit?entity=orders&action=delete');
+  const rows = trail.json?.rows ?? trail.json ?? [];
+  check('the deletion is in the audit log',
+    Array.isArray(rows) && rows.some((r) => String(r.summary ?? '').includes('E2E-DELETE-ME')),
+    `${Array.isArray(rows) ? rows.length : 0} delete rows`);
   console.log();
 }
 

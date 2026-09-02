@@ -117,6 +117,9 @@ export const Icon = {
   Copy: ({ size = 18, className }: P) => (
     <svg {...base(size, className)}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
   ),
+  Trash: ({ size = 18, className }: P) => (
+    <svg {...base(size, className)}><path d="M4 7h16M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1Z" /><path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" /><path d="M10 11v6M14 11v6" /></svg>
+  ),
   Lock: ({ size = 18, className }: P) => (
     <svg {...base(size, className)}><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
   ),

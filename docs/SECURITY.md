@@ -117,6 +117,38 @@ once rather than at the end of their shift.
 
 ---
 
+## Deleting an order
+
+`orders.delete` is held by **Administrator and Management only**. No other
+role has it, and adding it to one is itself governed by the rule above — a
+merchandiser cannot mint a role that can delete and then assign it to
+themselves.
+
+It is enforced on the server, not by hiding the button: a role without the
+permission is refused the delete, refused it again when it supplies the
+confirmation itself, and refused even the preview of what deleting would
+remove.
+
+An order deletes cleanly — every route step, matrix cell, cutting entry,
+job-work movement, shipment, cost sheet and approval goes with it in one
+transaction, because the schema cascades from the order row. Fabric already
+issued is the exception: those kilograms return to free stock rather than
+being destroyed, since the fabric is still physically in the store.
+
+**An order carrying work that actually happened is refused until it is
+confirmed by name.** The refusal lists what would be lost, and the screen
+lists it again before asking for the order number to be typed back. This is
+not ceremony: deleting such an order silently rewrites WIP, reconciliation
+and the buyer's book, and there is no undo short of the nightly backup.
+Cancelling the order — setting its status — keeps every figure intact and is
+almost always what was wanted.
+
+The audit row records the counts of everything that went with it, at
+`critical` severity when history was involved, because once the delete
+returns those counts exist nowhere else.
+
+---
+
 ## Sign-in
 
 - **Argon2id** password hashing, tuned so a login costs about 100 ms on a

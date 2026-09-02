@@ -1,6 +1,6 @@
 {
   "name": "huerex-gfes",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "private": true,
   "description": "HUEREX GFES \u2014 Garment Factory Execution System with per-garment costing",
   "workspaces": [

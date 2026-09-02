@@ -45,6 +45,21 @@ await app.register(helmet, {
       frameAncestors: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
+
+      /**
+       * Only behind TLS, and this one is not a nicety.
+       *
+       * Helmet adds `upgrade-insecure-requests` by default, which tells the
+       * browser to rewrite every subresource request to https://. On a
+       * plain-HTTP LAN the server does not speak https on that port, so the
+       * page arrives, the tab title appears, and then every script and
+       * stylesheet fails: a white screen with nothing to explain it.
+       *
+       * It does not happen on the machine running the server, because
+       * browsers treat localhost as already secure and skip the upgrade — so
+       * this breaks on every machine except the one it was tested on.
+       */
+      upgradeInsecureRequests: env.cookieSecure ? [] : null,
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -105,7 +120,7 @@ app.setNotFoundHandler((req, reply) => {
 // -------------------------------------------------------------------- routes
 app.get('/api/health', async () => ({
   ok: true,
-  version: '6.0.0',
+  version: '6.0.1',
   time: new Date().toISOString(),
 }));
 

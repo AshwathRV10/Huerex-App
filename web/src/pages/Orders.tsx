@@ -244,6 +244,7 @@ export function OrderDetailPage() {
   const { orderNo = '' } = useParams();
   const { can } = useSession();
   const [tab, setTab] = useState('overview');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['order', orderNo],
@@ -276,9 +277,16 @@ export function OrderDetailPage() {
                 <Icon.Layers size={16} /> WIP
               </Link>
             )}
+            {can('orders.delete') && (
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirmDelete(true)}>
+                <Icon.Trash size={16} /> Delete
+              </button>
+            )}
           </>
         }
       />
+
+      {confirmDelete && <DeleteOrderModal order={o} onClose={() => setConfirmDelete(false)} />}
 
       {data.issues.length > 0 && (
         <div className="banner banner-warn">
@@ -684,5 +692,123 @@ function MatrixEditor({ orderNo }: { orderNo: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------ deleting an order */
+
+interface DeletePreview {
+  rows: { table: string; label: string; history: boolean; count: number }[];
+  fabric_movements: number;
+  total: number;
+  has_history: boolean;
+}
+
+/**
+ * Deleting an order, with the consequences on screen rather than implied.
+ *
+ * A generic "are you sure?" is worthless here: the person clicking it cannot
+ * know whether this order carries two route steps or four months of the
+ * floor's work. So the dialog asks the server what would actually go, lists
+ * it, and — when any of it is work that really happened — makes them type the
+ * order number. The typing is not ceremony; it is the difference between a
+ * misclick and a decision.
+ */
+function DeleteOrderModal({ order, onClose }: {
+  order: { order_no: string; buyer: string; style: string }; onClose: () => void;
+}) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [typed, setTyped] = useState('');
+
+  const { data: preview, isLoading } = useQuery({
+    queryKey: ['order-delete-preview', order.order_no],
+    queryFn: () => api.get<DeletePreview>(
+      `/api/orders/${encodeURIComponent(order.order_no)}/delete-preview`),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.del(
+      `/api/orders/${encodeURIComponent(order.order_no)}?confirm=${encodeURIComponent(order.order_no)}`),
+    onSuccess: () => {
+      toast.ok(`${order.order_no} deleted`, 'The audit log has a record of what went with it.');
+      void qc.invalidateQueries({ queryKey: ['orders'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      navigate('/orders');
+    },
+    onError: (e) => toast.error(e),
+  });
+
+  const needsTyping = Boolean(preview?.has_history);
+  const ready = !isLoading && (!needsTyping || typed.trim() === order.order_no);
+
+  return (
+    <Modal
+      title={`Delete ${order.order_no}?`}
+      subtitle={`${order.buyer} · ${order.style || 'no style'}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>Keep the order</button>
+          <button type="button" className="btn btn-danger" disabled={!ready || remove.isPending}
+            onClick={() => remove.mutate()}>
+            {remove.isPending && <span className="spinner" />}
+            Delete permanently
+          </button>
+        </>
+      }
+    >
+      {isLoading ? <Loading rows={3} /> : (
+        <div className="col" style={{ gap: 'var(--s-4)' }}>
+          {preview && preview.total === 0 ? (
+            <p className="muted">
+              Nothing has been logged against this order, so only the order record itself goes.
+            </p>
+          ) : (
+            <>
+              <div>
+                <b>This also deletes, permanently:</b>
+                <ul style={{ margin: '6px 0 0', paddingLeft: '1.1rem' }}>
+                  {preview?.rows.map((r) => (
+                    <li key={r.table} className={r.history ? 'strong' : undefined}>
+                      {r.count} {r.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {(preview?.fabric_movements ?? 0) > 0 && (
+                <p className="tiny muted">
+                  {preview!.fabric_movements} fabric movement
+                  {preview!.fabric_movements === 1 ? '' : 's'} will go back to free stock rather than
+                  being destroyed — the kilograms stay in the store, they just stop belonging to this
+                  order.
+                </p>
+              )}
+            </>
+          )}
+
+          {needsTyping && (
+            <>
+              <div className="banner banner-danger">
+                <Icon.Alert size={18} />
+                <div>
+                  <b>Work that actually happened on the floor goes with it.</b>{' '}
+                  WIP, reconciliation and this buyer's book all change, and there is no undo short of
+                  last night's backup. If you only want the order out of the way, set its status to
+                  <b> Cancelled</b> instead — that keeps every figure intact.
+                </div>
+              </div>
+              <TextField
+                label={`Type ${order.order_no} to confirm`}
+                value={typed}
+                onChange={setTyped}
+                placeholder={order.order_no}
+              />
+            </>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }

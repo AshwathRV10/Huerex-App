@@ -78,8 +78,11 @@ consumption overrides the derived figure.
 
 **Access control that is actually enforced.** Module, screen, field and action
 level, checked on the server. A restricted figure is not hidden in the
-browser — it never leaves the machine. **[docs/SECURITY.md](docs/SECURITY.md)**,
-and `npm run test:rbac` proves it against a running server.
+browser — it never leaves the machine. Deleting an order is Administrator and
+Management only, refused until confirmed by name when the floor has worked on
+it, and recorded in the audit log with everything that went with it.
+**[docs/SECURITY.md](docs/SECURITY.md)**, and `npm run test:rbac` proves it
+against a running server.
 
 **Notifications.** A blocked order used to wait until somebody thought to open
 the approvals page. Now it finds its owner.
@@ -120,8 +123,8 @@ tested without a database:
 
 ```bash
 npm test          # 31 tests over the costing maths and the route walk
-npm run test:rbac # 22 checks that access control holds, against a live server
-npm run test:e2e  # 17 browser tests that drive the real screens
+npm run test:rbac # 34 checks that access control holds, against a live server
+npm run test:e2e  # 22 browser tests that drive the real screens
 npm run typecheck
 ```
 
