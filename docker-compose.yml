@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    image: huerex-gfes:6
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      # Plain HTTP on a LAN: the session cookie must not be Secure-only, or
+      # nobody can sign in. Set this to true the moment TLS is in front.
+      COOKIE_SECURE: "false"
+      BACKUP_CRON: "02:30"
+      SESSION_TTL_HOURS: "12"
+    volumes:
+      - ./data:/app/data
+      # Point this at real off-machine storage — a NAS mount or a synced
+      # folder. A backup on the same disk is not a backup.
+      - ./backups:/app/backups

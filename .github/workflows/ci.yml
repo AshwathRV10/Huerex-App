@@ -1,0 +1,171 @@
+# Everything a contributor is expected to run before pushing, run for them.
+#
+# Two jobs, because they fail for different reasons and it is worth seeing
+# which one went red at a glance:
+#
+#   checks         — types, the engine tests, and a production build
+#   access-control — the permission model, proven against a real server
+#   browser        — the screens themselves, driven in Chromium
+#
+# The last two are the reason this file is not a one-liner. Both sign in over
+# HTTP against a seeded database and a listening server: one asserts that
+# restricted data never leaves the machine, the other that the screens a
+# person actually uses still work — including on a phone-sized viewport.
+
+name: CI
+
+on:
+  # Only main on push. Everything else arrives as a pull request, and listening
+  # for both would run every branch commit twice for the same answer.
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push supersedes the first; there is no point finishing a run for a
+# commit nobody will look at again.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  # Not a secret: the database it unlocks is created and thrown away inside
+  # this run. It only exists so the seed and the test agree on a password.
+  CI_ADMIN_PW: 'Runner#2026ci'
+
+jobs:
+  checks:
+    name: Types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Engine tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  access-control:
+    name: Access control, against a running server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Only the server. The test talks to the API, never to the SPA, so
+      # building the web app here would be a minute spent for nothing.
+      - name: Build the server
+        run: npm --workspace server run build
+
+      - name: Seed a throwaway database
+        run: npm run seed
+        env:
+          DB_PATH: ${{ runner.temp }}/ci.sqlite
+          SEED_ADMIN_PASSWORD: ${{ env.CI_ADMIN_PW }}
+
+      - name: Start the server
+        run: |
+          node server/dist/index.js > "${RUNNER_TEMP}/server.log" 2>&1 &
+          pid=$!
+          echo "$pid" > "${RUNNER_TEMP}/server.pid"
+          for _ in $(seq 1 60); do
+            # Check the process we started is still alive before believing the
+            # port. A server that died on startup and a port answered by
+            # something else look identical to curl alone.
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "The server exited during startup:"
+              cat "${RUNNER_TEMP}/server.log"
+              exit 1
+            fi
+            if curl -fsS http://127.0.0.1:4123/api/health > /dev/null; then
+              echo "up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "The server never answered /api/health:"
+          cat "${RUNNER_TEMP}/server.log"
+          exit 1
+        env:
+          DB_PATH: ${{ runner.temp }}/ci.sqlite
+          BACKUP_DIR: ${{ runner.temp }}/backups
+          PORT: '4123'
+          HOST: 127.0.0.1
+          # Plain HTTP on the runner: a Secure cookie would never come back and
+          # every sign-in would fail for a reason that has nothing to do with
+          # the code under test.
+          COOKIE_SECURE: 'false'
+          SERVE_WEB: 'false'
+          BACKUP_ENABLED: 'false'
+          LOG_LEVEL: warn
+
+      - name: Prove the permission model holds
+        run: npm run test:rbac
+        env:
+          BASE: http://127.0.0.1:4123
+          ADMIN_PW: ${{ env.CI_ADMIN_PW }}
+
+      - name: Server log
+        if: failure()
+        run: cat "${RUNNER_TEMP}/server.log" || true
+
+      - name: Stop the server
+        if: always()
+        run: kill "$(cat "${RUNNER_TEMP}/server.pid")" 2>/dev/null || true
+
+  browser:
+    name: Screens, driven in a browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # The tests drive the built application — the same single process the
+      # factory runs — so both halves have to exist before Playwright starts.
+      - name: Build
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Drive the screens
+        run: npm run test:e2e
+        env:
+          E2E_ADMIN_PW: ${{ env.CI_ADMIN_PW }}
+
+      - name: Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
