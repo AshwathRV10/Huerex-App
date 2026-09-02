@@ -121,15 +121,23 @@ tested without a database:
 ```bash
 npm test          # 31 tests over the costing maths and the route walk
 npm run test:rbac # 22 checks that access control holds, against a live server
+npm run test:e2e  # 17 browser tests that drive the real screens
 npm run typecheck
 ```
 
-All three run on every push and pull request
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The access-control
-suite is the reason that file has two jobs: it seeds a throwaway database,
-starts a real server and signs in over HTTP, because the thing being proved —
-that a restricted figure never leaves the machine — cannot be proved without
-one.
+All four run on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Two of them need a
+running application rather than a test harness, which is why that file has
+three jobs: `test:rbac` signs in over HTTP to prove a restricted figure never
+leaves the machine, and `test:e2e` drives Chromium through the built
+application to prove the screens still work — including at 390px, where the
+grid becomes cards and Save moves under the thumb.
+
+The browser tests reseed a throwaway database on every run, so they can assert
+on known state: an order that has never been costed, a rate library still
+holding starting points. They need a build first, because they drive
+`server/dist/index.js` — the same single process the factory runs — not a dev
+server.
 
 ### Ideas the code is built on
 

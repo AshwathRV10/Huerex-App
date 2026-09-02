@@ -15,3 +15,8 @@ server/dist/
 coverage/
 web/tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# Browser tests
+test-results/
+playwright-report/
+tests/e2e/.auth/

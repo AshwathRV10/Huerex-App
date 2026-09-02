@@ -27,8 +27,10 @@ money depends on the buyer, which is why the rule lives on the buyer record
 **Rejection is different again.** Those pieces are made and paid for and never
 leave. Allowing 2% means the floor has to make 1,021 garments to ship 1,000.
 
-The cost sheet shows all five figures live as you type the percentages, so
-nobody has to hold the arithmetic in their head:
+The cost sheet shows all five figures side by side, so nobody has to hold the
+arithmetic in their head. They are worked out by the costing engine on the
+server rather than duplicated in the browser — one source of truth for every
+number — so the strip answers when the sheet is saved:
 
 | | |
 | --- | --- |

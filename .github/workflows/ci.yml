@@ -5,11 +5,12 @@
 #
 #   checks         — types, the engine tests, and a production build
 #   access-control — the permission model, proven against a real server
+#   browser        — the screens themselves, driven in Chromium
 #
-# The second one is the reason this file is not a one-liner. `npm run
-# test:rbac` signs in over HTTP and asserts that restricted data never leaves
-# the machine, so it needs a seeded database and a listening server rather
-# than a test harness.
+# The last two are the reason this file is not a one-liner. Both sign in over
+# HTTP against a seeded database and a listening server: one asserts that
+# restricted data never leaves the machine, the other that the screens a
+# person actually uses still work — including on a phone-sized viewport.
 
 name: CI
 
@@ -132,3 +133,39 @@ jobs:
       - name: Stop the server
         if: always()
         run: kill "$(cat "${RUNNER_TEMP}/server.pid")" 2>/dev/null || true
+
+  browser:
+    name: Screens, driven in a browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # The tests drive the built application — the same single process the
+      # factory runs — so both halves have to exist before Playwright starts.
+      - name: Build
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Drive the screens
+        run: npm run test:e2e
+        env:
+          E2E_ADMIN_PW: ${{ env.CI_ADMIN_PW }}
+
+      - name: Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
