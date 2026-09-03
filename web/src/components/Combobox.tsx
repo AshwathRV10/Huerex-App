@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Floating } from './Floating';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useToast } from '../lib/toast';
@@ -50,6 +51,9 @@ export function Combobox({
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The menu is portalled out of the field, so "outside" has to mean outside
+  // both of them or choosing an option would count as a click away.
+  const menuRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const qc = useQueryClient();
   const { can } = useSession();
@@ -113,7 +117,8 @@ export function Combobox({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) close();
+      const t = e.target as Node;
+      if (!boxRef.current?.contains(t) && !menuRef.current?.contains(t)) close();
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -170,7 +175,8 @@ export function Combobox({
           onKeyDown={onKeyDown}
         />
         {open && (
-          <div className="combo-menu" id={`${inputId}-menu`} role="listbox">
+          <Floating anchor={boxRef.current} panelRef={menuRef}
+            className="combo-menu" id={`${inputId}-menu`} role="listbox">
             {options.map((o, i) => (
               <div
                 key={o.value}
@@ -206,7 +212,7 @@ export function Combobox({
                     : 'Nothing matches.'}
               </div>
             )}
-          </div>
+          </Floating>
         )}
       </div>
       {error ? <span className="err">{error}</span> : help ? <span className="help">{help}</span> : null}

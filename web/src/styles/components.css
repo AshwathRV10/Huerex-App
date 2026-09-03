@@ -243,9 +243,17 @@ table.data .cell-sub { display: block; font-size: var(--text-2xs); color: var(--
 /* --------------------------------------------------------------- combobox */
 .combo { position: relative; }
 .combo-input { width: 100%; }
+/* Positioned against the viewport by <Floating>, in a portal at the end of the
+   document — left, top and max-height arrive as inline styles. It cannot be
+   absolute inside the field: the bulk entry grid and every wide table scroll,
+   and a scroll container clips its own descendants, which turned this menu
+   into a two-line slot you had to scroll to read. */
 .combo-menu {
-  position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 4px);
-  max-height: 292px; overflow: auto;
+  /* Above the modal layer (90) because the portal makes this a sibling of the
+     dialog rather than a child of it, and below toasts (120) so a message
+     about what just happened is never hidden by an open list. */
+  position: fixed; z-index: 100;
+  overflow: auto; -webkit-overflow-scrolling: touch;
   background: var(--surface); border: 1px solid var(--line-strong);
   border-radius: var(--radius); box-shadow: var(--shadow-3);
   padding: 4px; animation: pop 120ms var(--ease);
