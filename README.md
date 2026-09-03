@@ -123,8 +123,8 @@ tested without a database:
 
 ```bash
 npm test          # 31 tests over the costing maths and the route walk
-npm run test:rbac # 34 checks that access control holds, against a live server
-npm run test:e2e  # 22 browser tests that drive the real screens
+npm run test:rbac # 36 checks that access control holds, against a live server
+npm run test:e2e  # 28 browser tests that drive the real screens
 npm run typecheck
 ```
 

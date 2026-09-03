@@ -233,11 +233,11 @@ export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate
               <div className="line-grid">
                 {columns.map((col) => (
                   <div key={col.key} className="field">
-                    <label>
+                    <label htmlFor={`r${r}-${col.key}`}>
                       {col.label}
                       {col.required && <span aria-hidden="true" style={{ color: 'var(--danger)' }}> *</span>}
                     </label>
-                    <Cell col={col} value={row[col.key]} disabled={disabled}
+                    <Cell id={`r${r}-${col.key}`} col={col} value={row[col.key]} disabled={disabled}
                       onChange={(v) => setCell(r, col.key, v)} />
                     {col.hint && <span className="help">{col.hint}</span>}
                   </div>
@@ -350,16 +350,24 @@ export function BulkGrid({ columns, rows, onChange, blank, minRows = 1, validate
   );
 }
 
-function Cell({ col, value, onChange, disabled, autoFocus }: {
+export function Cell({ col, value, onChange, disabled, autoFocus, id }: {
   col: GridColumn;
   value: string | number | boolean | undefined;
   onChange: (v: string | number | boolean) => void;
   disabled?: boolean;
   autoFocus?: boolean;
+  /**
+   * Ties a visible label to this control. The grid's own header does that job
+   * on a desk; anywhere the cell sits under a <label> — the phone cards, the
+   * correction dialog — the label needs something to point at, or clicking it
+   * focuses nothing and a screen reader reads the field unnamed.
+   */
+  id?: string;
 }) {
   if (col.type === 'combo' && col.list) {
     return (
       <Combobox
+        id={id}
         list={col.list}
         value={String(value ?? '')}
         onChange={onChange}
@@ -370,7 +378,7 @@ function Cell({ col, value, onChange, disabled, autoFocus }: {
   }
   if (col.type === 'select') {
     return (
-      <select className="select" value={String(value ?? '')} disabled={disabled}
+      <select id={id} className="select" value={String(value ?? '')} disabled={disabled}
         onChange={(e) => onChange(e.target.value)}>
         {(col.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -379,7 +387,7 @@ function Cell({ col, value, onChange, disabled, autoFocus }: {
   if (col.type === 'check') {
     return (
       <label className="check" style={{ justifyContent: 'center' }}>
-        <input type="checkbox" checked={Boolean(value)} disabled={disabled}
+        <input id={id} type="checkbox" checked={Boolean(value)} disabled={disabled}
           onChange={(e) => onChange(e.target.checked)} />
         <span className="sr-only">{col.label}</span>
       </label>
@@ -388,6 +396,7 @@ function Cell({ col, value, onChange, disabled, autoFocus }: {
   if (col.type === 'number') {
     return (
       <input
+        id={id}
         type="number" inputMode="decimal" className="input input-num"
         min={col.min ?? 0} step={col.step ?? 1} disabled={disabled} autoFocus={autoFocus}
         placeholder={col.placeholder ?? '0'}
@@ -398,6 +407,7 @@ function Cell({ col, value, onChange, disabled, autoFocus }: {
   }
   return (
     <input
+      id={id}
       type={col.type === 'date' ? 'date' : 'text'}
       className="input" disabled={disabled} autoFocus={autoFocus}
       placeholder={col.placeholder}

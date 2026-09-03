@@ -4,9 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
-import { BulkGrid, filledRows, makeBlank, type GridColumn, type GridRow } from './BulkGrid';
+import { BulkGrid, Cell, filledRows, makeBlank, type GridColumn, type GridRow } from './BulkGrid';
 import { OrderPicker } from './OrderPicker';
-import { Confirm, Empty, Loading, PageHead, Tabs } from './ui';
+import { Confirm, Empty, Loading, Modal, PageHead, Tabs } from './ui';
 import { Icon } from './Icons';
 import { date as fmtDate, today } from '../lib/format';
 
@@ -58,6 +58,7 @@ export function EntryPage({
   const [params, setParams] = useSearchParams();
   const orderNo = params.get('order') ?? '';
   const [tab, setTab] = useState<'log' | 'history'>(can(`${module}.create`) ? 'log' : 'history');
+  const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
 
   const blank = useMemo(() => makeBlank(columns, { txn_date: today(), ...(seed ?? {}) }), [columns, seed]);
@@ -218,7 +219,7 @@ export function EntryPage({
                       <th key={c.key} className={c.type === 'number' ? 'num' : ''}>{c.label}</th>
                     ))}
                     {derived?.map((d) => <th key={d.key} className={d.align === 'right' ? 'num' : ''}>{d.label}</th>)}
-                    {can(`${module}.delete`) && <th style={{ width: 44 }} />}
+                    {(can(`${module}.edit`) || can(`${module}.delete`)) && <th style={{ width: 96 }} />}
                   </tr>
                 </thead>
                 <tbody>
@@ -239,11 +240,20 @@ export function EntryPage({
                           {d.render ? d.render(row) : String(row[d.key] ?? '—')}
                         </td>
                       ))}
-                      {can(`${module}.delete`) && (
+                      {(can(`${module}.edit`) || can(`${module}.delete`)) && (
                         <td data-label="">
-                          <button type="button" className="btn btn-ghost btn-sm btn-icon"
-                            aria-label="Delete this row" title="Delete this row"
-                            onClick={() => setConfirmDelete(Number(row.id))}>✕</button>
+                          <div className="row" style={{ gap: 2, justifyContent: 'flex-end' }}>
+                            {can(`${module}.edit`) && (
+                              <button type="button" className="btn btn-ghost btn-sm"
+                                title="Correct this entry"
+                                onClick={() => setEditing(row)}>Edit</button>
+                            )}
+                            {can(`${module}.delete`) && (
+                              <button type="button" className="btn btn-ghost btn-sm btn-icon"
+                                aria-label="Delete this row" title="Delete this row"
+                                onClick={() => setConfirmDelete(Number(row.id))}>✕</button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -252,6 +262,22 @@ export function EntryPage({
               </table>
             </div>
           )
+      )}
+
+      {editing && (
+        <EditRowModal
+          row={editing}
+          columns={columns}
+          endpoint={endpoint}
+          validate={validate}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void qc.invalidateQueries({ queryKey: [endpoint] });
+            void qc.invalidateQueries({ queryKey: ['order'] });
+            void qc.invalidateQueries({ queryKey: ['dashboard'] });
+          }}
+        />
       )}
 
       {confirmDelete !== null && (
@@ -280,4 +306,87 @@ function formatCell(value: unknown, col: EntryColumn): ReactNode {
   if (col.type === 'check') return value ? <span className="badge badge-ok">Yes</span> : <span className="subtle">No</span>;
   if (col.type === 'number') return Number(value).toLocaleString('en-IN');
   return String(value);
+}
+
+/* ------------------------------------------------------ correcting an entry */
+
+/**
+ * Editing a row that is already saved.
+ *
+ * Some of what a sheet records only becomes known later — trims are required
+ * and received on the day they arrive, and issued to the floor a week
+ * afterwards. Without this the only way to add the later figure was to delete
+ * the receipt and type the whole thing again, which loses the original entry
+ * and its date.
+ *
+ * It uses the same column declaration and the same cells as the entry grid, so
+ * a field behaves identically whether it is being typed for the first time or
+ * corrected — and every sheet gets this for free.
+ */
+function EditRowModal({ row, columns, endpoint, validate, onClose, onSaved }: {
+  row: Record<string, unknown>;
+  columns: EntryColumn[];
+  endpoint: string;
+  validate?: (row: GridRow) => string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+
+  const [draft, setDraft] = useState<GridRow>(() => {
+    const out: GridRow = {};
+    for (const c of columns) {
+      const v = row[c.key];
+      out[c.key] = c.type === 'check' ? Boolean(v)
+        : c.type === 'number' ? Number(v ?? 0)
+          : String(v ?? '');
+    }
+    return out;
+  });
+
+  const problem = validate?.(draft) ?? null;
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/${endpoint}/${row.id}`, draft),
+    onSuccess: () => {
+      toast.ok('Entry corrected', 'The change and what it replaced are both in the audit log.');
+      onSaved();
+    },
+    onError: (e) => toast.error(e),
+  });
+
+  return (
+    <Modal
+      title="Correct this entry"
+      subtitle={`${String(row.order_no ?? '')} · logged ${fmtDate(String(row.txn_date ?? ''))}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary"
+            disabled={Boolean(problem) || save.isPending}
+            onClick={() => save.mutate()}>
+            {save.isPending && <span className="spinner" />}Save the correction
+          </button>
+        </>
+      }
+    >
+      <div className="col" style={{ gap: 'var(--s-4)' }}>
+        <div className="line-grid">
+          {columns.map((c) => (
+            <div key={c.key} className="field">
+              <label htmlFor={`edit-${c.key}`}>
+                {c.label}
+                {c.required && <span aria-hidden="true" style={{ color: 'var(--danger)' }}> *</span>}
+              </label>
+              <Cell id={`edit-${c.key}`} col={c} value={draft[c.key]}
+                onChange={(v) => setDraft((d) => ({ ...d, [c.key]: v }))} />
+              {c.hint && <span className="help">{c.hint}</span>}
+            </div>
+          ))}
+        </div>
+        {problem && <div className="banner banner-danger">{problem}</div>}
+      </div>
+    </Modal>
+  );
 }

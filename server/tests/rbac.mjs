@@ -141,6 +141,15 @@ console.log('test users ready\n');
   const forced = await call(u, 'DELETE', '/api/orders/HR-002?confirm=HR-002');
   check('cannot delete an order by supplying the confirmation itself',
     forced.status === 403, `got ${forced.status}`);
+  // Reading a floor sheet is not permission to rewrite yesterday's entry.
+  const someJobWork = await call(admin, 'GET', '/api/jobwork?order_no=HR-002&limit=1');
+  const rowId = (someJobWork.json?.rows ?? [])[0]?.id;
+  if (rowId) {
+    check('can read job work', (await call(u, 'GET', '/api/jobwork?limit=1')).status === 200);
+    const edit = await call(u, 'PATCH', `/api/jobwork/${rowId}`, { remarks: 'not mine to change' });
+    check('cannot correct a job-work entry', edit.status === 403, `got ${edit.status}`);
+  }
+
   const preview = await call(u, 'GET', '/api/orders/HR-002/delete-preview');
   check('cannot even see what deleting one would remove', preview.status === 403, `got ${preview.status}`);
   check('and the order is still there',
