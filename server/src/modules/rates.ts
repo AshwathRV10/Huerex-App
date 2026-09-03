@@ -354,8 +354,24 @@ export function registerRates(app: FastifyInstance): void {
     const id = Number((req.params as { id: string }).id);
     const before = one<RateRow>('SELECT * FROM rate_memory WHERE id = ?', [id]);
     if (!before) throw new HttpError(404, 'No such rate', 'not_found');
+    const uses = one<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM rate_history WHERE rate_memory_id = ?', [id],
+    )!.c;
     run('DELETE FROM rate_memory WHERE id = ?', [id]);
-    audit(req, { action: 'delete', entity: 'rate_memory', entityId: id, summary: 'Forgot a remembered rate', before, severity: 'warning' });
+
+    // The summary is what somebody scans months later, and by then the row it
+    // describes is gone — so it has to name the rate rather than the fact that
+    // one was deleted.
+    const subject = [before.fabric_type, before.trim_item, before.process, before.operation,
+      before.category, before.component].filter(Boolean).join(' · ') || before.kind;
+    const scope = [before.style && `style ${before.style}`, before.buyer, before.colour,
+      before.vendor && `at ${before.vendor}`].filter(Boolean).join(' · ') || 'any order';
+    audit(req, {
+      action: 'delete', entity: 'rate_memory', entityId: id,
+      summary: `Forgot ${subject} (${scope}) at ${before.rate}, used ${before.use_count}×`
+        + (uses ? `, with ${uses} change${uses === 1 ? '' : 's'} of history` : ''),
+      before, severity: 'warning',
+    });
     return reply.send({ deleted: true });
   });
 

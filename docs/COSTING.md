@@ -136,6 +136,15 @@ The whole library is on **Rate library**, with the history of every change:
 who changed it, on which order, and what it was before. That screen answers
 "why is this order dearer than the last one".
 
+A rate can also be **forgotten** there, by anyone holding `rates.delete` —
+Administrator and Management as standard. The library fills itself from real
+work, so it collects mistakes too: a rate typed against the wrong vendor, a
+starting point nobody will ever use. Forgetting one changes nothing that has
+already been costed, because every sheet keeps the figure it was saved with;
+it only stops the number being offered on the next one. The rate's history of
+changes goes with it, which is why the audit entry records what the rate was,
+where it applied and how often it had been used.
+
 ### Starting points, and how to tell them apart
 
 Seeding adds about a dozen **starting points** — a cutting rate, a sewing rate

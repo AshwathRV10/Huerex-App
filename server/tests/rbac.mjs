@@ -141,6 +141,10 @@ console.log('test users ready\n');
   const forced = await call(u, 'DELETE', '/api/orders/HR-002?confirm=HR-002');
   check('cannot delete an order by supplying the confirmation itself',
     forced.status === 403, `got ${forced.status}`);
+  // The rate library is the record of why orders were priced the way they were.
+  const wipe = await call(u, 'DELETE', '/api/rates/1');
+  check('cannot forget a remembered rate', wipe.status === 403, `got ${wipe.status}`);
+
   // Reading a floor sheet is not permission to rewrite yesterday's entry.
   const someJobWork = await call(admin, 'GET', '/api/jobwork?order_no=HR-002&limit=1');
   const rowId = (someJobWork.json?.rows ?? [])[0]?.id;

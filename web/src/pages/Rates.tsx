@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
-import { Empty, Loading, Modal, PageHead } from '../components/ui';
+import { Confirm, Empty, Loading, Modal, PageHead } from '../components/ui';
 import { Icon } from '../components/Icons';
 import { ago, dateTime, money } from '../lib/format';
 
@@ -82,6 +82,7 @@ export function RatesPage() {
   const [q, setQ] = useState('');
   const [history, setHistory] = useState<RateRow | null>(null);
   const [editing, setEditing] = useState<RateRow | null>(null);
+  const [removing, setRemoving] = useState<RateRow | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['rates', kind, q],
@@ -93,6 +94,16 @@ export function RatesPage() {
     onSuccess: () => {
       toast.ok('Rate updated', 'Cost sheets built from now on will be offered the new figure.');
       setEditing(null);
+      void qc.invalidateQueries({ queryKey: ['rates'] });
+    },
+    onError: (e) => toast.error(e),
+  });
+
+  const forget = useMutation({
+    mutationFn: (id: number) => api.del(`/api/rates/${id}`),
+    onSuccess: () => {
+      toast.ok('Rate forgotten', 'Cost sheets already built keep the rate they were saved with.');
+      setRemoving(null);
       void qc.invalidateQueries({ queryKey: ['rates'] });
     },
     onError: (e) => toast.error(e),
@@ -192,6 +203,11 @@ export function RatesPage() {
                             Edit
                           </button>
                         )}
+                        {can('rates.delete') && (
+                          <button type="button" className="btn btn-ghost btn-sm btn-icon"
+                            aria-label={`Forget ${subject(r)}`} title="Forget this rate"
+                            onClick={() => setRemoving(r)}>✕</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -200,6 +216,35 @@ export function RatesPage() {
             </table>
           </div>
         )}
+
+      {removing && (
+        <Confirm
+          title="Forget this rate?"
+          danger
+          confirmLabel="Forget it"
+          busy={forget.isPending}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => forget.mutate(removing.id)}
+          body={
+            <div className="col" style={{ gap: 'var(--s-3)' }}>
+              <p>
+                <b>{subject(removing)}</b> at{' '}
+                <b>{removing.currency === 'INR' ? money(removing.rate) : `${removing.rate} ${removing.currency}`}</b>
+                {removing.uom && <> {unit(removing.uom)}</>}, for {scope(removing)}.
+              </p>
+              <p className="muted tiny">
+                {isPlaceholder(removing)
+                  ? 'This is a starting point the app shipped with, so nothing here has ever depended on it.'
+                  : `It has been used ${removing.use_count}×. Its history of changes goes with it, and that is the record of why an order was priced the way it was.`}
+              </p>
+              <p className="muted tiny">
+                No cost sheet changes. Every sheet keeps the rate it was saved with — this only
+                stops the figure being offered on the next one.
+              </p>
+            </div>
+          }
+        />
+      )}
 
       {history && <HistoryModal rate={history} onClose={() => setHistory(null)} />}
       {editing && (
