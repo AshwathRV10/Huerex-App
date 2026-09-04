@@ -137,7 +137,8 @@ who changed it, on which order, and what it was before. That screen answers
 "why is this order dearer than the last one".
 
 A rate can also be **forgotten** there, by anyone holding `rates.delete` —
-Administrator and Management as standard. The library fills itself from real
+Administrator, Management and **Costing & Commercial** as standard, that last
+one because owning the library means being able to tidy it. The library fills itself from real
 work, so it collects mistakes too: a rate typed against the wrong vendor, a
 starting point nobody will ever use. Forgetting one changes nothing that has
 already been costed, because every sheet keeps the figure it was saved with;

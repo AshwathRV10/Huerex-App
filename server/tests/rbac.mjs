@@ -54,6 +54,7 @@ for (const [username, role, full] of [
   ['floor.test', 'production', 'Floor Operator'],
   ['store.test', 'store', 'Store Keeper'],
   ['merch.test', 'merchandiser', 'Merchandiser'],
+  ['costing.test', 'costing', 'Costing Clerk'],
 ]) {
   const res = await call(admin, 'POST', '/api/users', {
     username, full_name: full, email: '', roles: [role], is_active: 1,
@@ -195,6 +196,30 @@ console.log('test users ready\n');
   check('the deletion is in the audit log',
     Array.isArray(rows) && rows.some((r) => String(r.summary ?? '').includes('E2E-DELETE-ME')),
     `${Array.isArray(rows) ? rows.length : 0} delete rows`);
+  console.log();
+}
+
+// ------------------------------------------- costing, who owns the library
+{
+  const u = jar();
+  await call(u, 'POST', '/api/auth/login', { username: 'costing.test', password: 'Testing#2026aa' });
+  console.log('costing role — builds cost sheets and owns the rate library:');
+
+  check('can read the rate library', (await call(u, 'GET', '/api/rates?limit=1')).status === 200);
+  check('can see cost and margin', (await call(u, 'GET', '/api/costing')).status === 200);
+
+  // Owning the library includes tidying it: a rate typed against the wrong
+  // vendor is this role's to clear up.
+  const rates = await call(admin, 'GET', '/api/rates?limit=1');
+  const rateId = (Array.isArray(rates.json) ? rates.json : rates.json?.rows ?? [])[0]?.id;
+  if (rateId) {
+    const gone = await call(u, 'DELETE', `/api/rates/${rateId}`);
+    check('can forget a remembered rate', gone.status === 200, `got ${gone.status}`);
+  }
+
+  // But the library is not the user list.
+  check('still refused user administration', (await call(u, 'GET', '/api/users')).status === 403);
+  check('still refused the audit log', (await call(u, 'GET', '/api/audit')).status === 403);
   console.log();
 }
 

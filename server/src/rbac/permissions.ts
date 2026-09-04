@@ -197,7 +197,10 @@ export const DEFAULT_ROLES: RoleSeed[] = [
     permissions: [
       ...floorView, 'buyersummary.view', 'buyersummary.export', 'buyersummary.commercials.view',
       ...allEntry(['costing', 'rates']),
-      'costing.delete',
+      // Owning the rate library means being able to tidy it. A rate typed
+      // against the wrong vendor is this role's mistake to make and to clear
+      // up, and forgetting one changes no sheet that has already been built.
+      'costing.delete', 'rates.delete',
       ...MODULES.find((m) => m.key === 'costing')!.sensitiveFields!.flatMap(
         (f) => f.actions.map((a) => `costing.${f.key}.${a}`),
       ),
