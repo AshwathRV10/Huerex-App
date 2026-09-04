@@ -169,6 +169,25 @@
   background: var(--surface);
   -webkit-overflow-scrolling: touch;
 }
+
+/**
+ * Frozen header rows.
+ *
+ * The headers have always said `position: sticky`, and it did nothing: an
+ * ancestor with `overflow` becomes the scrollport a sticky element answers to,
+ * and these wrappers had no height, so they never scrolled — the page did, and
+ * the header went with it. Giving the wrapper a height is what makes the
+ * sticky that was already there start working.
+ *
+ * Only on a desk. Below 900px a wide table becomes a stack of labelled cards
+ * with no header row to freeze, and a boxed-in scrolling area on a phone is
+ * worse than none.
+ */
+@media (min-width: 901px) {
+  .table-wrap, .bulk-wrap {
+    max-height: max(320px, calc(100dvh - var(--table-chrome)));
+  }
+}
 .table-wrap.flush { border: 0; border-radius: 0; }
 
 table.data { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); }
