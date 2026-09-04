@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Floating } from './Floating';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
@@ -37,6 +38,7 @@ export function OrderPicker({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const { data, isFetching } = useQuery({
     queryKey: ['order-picker', query, liveOnly],
@@ -52,7 +54,7 @@ export function OrderPicker({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) { setOpen(false); setQuery(''); }
+      if (!boxRef.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) { setOpen(false); setQuery(''); }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -98,7 +100,8 @@ export function OrderPicker({
           }}
         />
         {open && (
-          <div className="combo-menu" role="listbox">
+          <Floating anchor={boxRef.current} panelRef={menuRef}
+            className="combo-menu" role="listbox">
             {rows.map((o, i) => (
               <div key={o.order_no} role="option" aria-selected={i === active} className="combo-opt"
                 onMouseEnter={() => setActive(i)}
@@ -113,7 +116,7 @@ export function OrderPicker({
             {rows.length === 0 && (
               <div className="combo-empty">{isFetching ? 'Looking…' : 'No order matches that.'}</div>
             )}
-          </div>
+          </Floating>
         )}
       </div>
       {help && <span className="help">{help}</span>}
