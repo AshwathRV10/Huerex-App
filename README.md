@@ -124,7 +124,7 @@ tested without a database:
 ```bash
 npm test          # 31 tests over the costing maths and the route walk
 npm run test:rbac # 42 checks that access control holds, against a live server
-npm run test:e2e  # 33 browser tests that drive the real screens
+npm run test:e2e  # 34 browser tests that drive the real screens
 npm run typecheck
 ```
 

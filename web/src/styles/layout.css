@@ -223,8 +223,15 @@ table.bulk tr.filled td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .mobile-only { display: none; }
 
 /* Repeated context that a wide table shows in its own column, but a stacked
-   card has to carry on the title line. Hidden until the table collapses. */
-.stacked-only { display: none; }
+   card has to carry on the title line. Hidden until the table collapses.
+
+   The !important is doing real work, not papering over sloppiness: this is a
+   visibility utility applied alongside styling classes, and a more specific
+   one wins on specificity regardless of order. `table.data .cell-sub` did
+   exactly that, so WIP on the floor showed every colour and size twice on a
+   desk screen. A utility that can lose an argument about visibility is not a
+   utility. `.desktop-only` below is emphatic for the same reason. */
+.stacked-only { display: none !important; }
 
 @media (max-width: 900px) {
   .shell, .shell.collapsed { grid-template-columns: 1fr; }
@@ -247,7 +254,7 @@ table.bulk tr.filled td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
   .shell.collapsed .nav-item { justify-content: flex-start; padding-inline: var(--s-3); }
 
   .mobile-only { display: revert; }
-  .stacked-only { display: block; }
+  .stacked-only { display: block !important; }
   .desktop-only { display: none !important; }
 
   .page { padding: var(--s-4) var(--s-3) calc(var(--s-16) + env(safe-area-inset-bottom)); gap: var(--s-4); }

@@ -73,3 +73,22 @@ test('the entry grid keeps its headers', async ({ page }) => {
 
   await scrollAndCheck(page, '.bulk-wrap');
 });
+
+/**
+ * The mobile-only subtitle stays on mobile.
+ *
+ * `.stacked-only` carries the colour and size on a phone, where the table has
+ * collapsed to cards and its own column is gone. On a desk it must not appear,
+ * or every row reads its colour out twice. It lost that argument once already:
+ * `table.data .cell-sub` is the more specific selector, so it won on
+ * specificity no matter the order of the files.
+ */
+test('a wide table does not repeat the colour and size on a desk screen', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/wip');
+  await expect(page.locator('table.data tbody tr').first()).toBeVisible();
+
+  const hidden = await page.locator('.stacked-only').first()
+    .evaluate((el) => getComputedStyle(el).display);
+  expect(hidden, 'the stacked-card subtitle belongs to phones').toBe('none');
+});
