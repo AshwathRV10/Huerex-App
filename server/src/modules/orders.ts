@@ -537,15 +537,17 @@ function describe(impact: DeletionImpact): string {
     return reply.send({ rows: all('SELECT * FROM vendors WHERE is_active = 1 ORDER BY name') });
   });
 
+  const VendorBody = z.object({
+    name: zText(160).min(1),
+    processes: zText(300).default(''),
+    contact: zText(300).default(''),
+    gst_no: zText(30).default(''),
+    notes: zText(1000).default(''),
+  });
+
   app.post('/api/vendors', async (req: FastifyRequest, reply: FastifyReply) => {
     assertPermission(req, 'vendors.create');
-    const body = parse(z.object({
-      name: zText(160).min(1),
-      processes: zText(300).default(''),
-      contact: zText(300).default(''),
-      gst_no: zText(30).default(''),
-      notes: zText(1000).default(''),
-    }), req.body);
+    const body = parse(VendorBody, req.body);
     run(
       `INSERT INTO vendors (name, processes, contact, gst_no, notes) VALUES (?,?,?,?,?)
        ON CONFLICT(name) DO UPDATE SET processes = excluded.processes, contact = excluded.contact,
@@ -555,5 +557,26 @@ function describe(impact: DeletionImpact): string {
     learnValue('vendors', body.name, req.principal?.userId);
     audit(req, { action: 'create', entity: 'vendors', summary: `Saved vendor ${body.name}`, after: body });
     return reply.code(201).send(one('SELECT * FROM vendors WHERE name = ?', [body.name]));
+  });
+
+  app.patch('/api/vendors/:id', async (req: FastifyRequest, reply: FastifyReply) => {
+    assertPermission(req, 'vendors.edit');
+    const id = Number((req.params as { id: string }).id);
+    const before = one<Record<string, unknown>>('SELECT * FROM vendors WHERE id = ?', [id]);
+    if (!before) throw new HttpError(404, 'No such vendor', 'not_found');
+    // Name is not part of the merge: job-work movements, cost-sheet lines and
+    // rate memory all carry a vendor by name as plain text, the same as a
+    // buyer does, so renaming here would silently orphan every one of them.
+    const body = parse(VendorBody, { ...before, ...(req.body as object), name: before.name });
+    run(
+      `UPDATE vendors SET processes = ?, contact = ?, gst_no = ?, notes = ? WHERE id = ?`,
+      [body.processes, body.contact, body.gst_no, body.notes, id],
+    );
+    const after = one<Record<string, unknown>>('SELECT * FROM vendors WHERE id = ?', [id]);
+    audit(req, {
+      action: 'update', entity: 'vendors', entityId: id,
+      summary: `Edited vendor ${body.name}`, before, after,
+    });
+    return reply.send(after);
   });
 }

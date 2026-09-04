@@ -142,6 +142,15 @@ console.log('test users ready\n');
   const forced = await call(u, 'DELETE', '/api/orders/HR-002?confirm=HR-002');
   check('cannot delete an order by supplying the confirmation itself',
     forced.status === 403, `got ${forced.status}`);
+  // Vendors are master data the whole factory reads; editing one is not.
+  const vendors = await call(admin, 'GET', '/api/vendors');
+  const vendorId = (vendors.json?.rows ?? [])[0]?.id;
+  if (vendorId) {
+    check('can read vendors', (await call(u, 'GET', '/api/vendors')).status === 200);
+    const edit = await call(u, 'PATCH', `/api/vendors/${vendorId}`, { contact: 'not mine to set' });
+    check('cannot edit a vendor', edit.status === 403, `got ${edit.status}`);
+  }
+
   // The rate library is the record of why orders were priced the way they were.
   const wipe = await call(u, 'DELETE', '/api/rates/1');
   check('cannot forget a remembered rate', wipe.status === 403, `got ${wipe.status}`);

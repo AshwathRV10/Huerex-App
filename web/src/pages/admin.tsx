@@ -889,6 +889,10 @@ interface Buyer {
   payment_terms: string; contact: string; notes: string; order_count: number;
 }
 
+interface Vendor {
+  id: number; name: string; processes: string; contact: string; gst_no: string; notes: string;
+}
+
 export function BuyersPage() {
   const { can } = useSession();
   const [tab, setTab] = useState('buyers');
@@ -1043,20 +1047,18 @@ function BuyerModal({ buyer, onClose, onSave, busy }: {
 function VendorsTab({ canEdit }: { canEdit: boolean }) {
   const toast = useToast();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: '', processes: '', contact: '', gst_no: '', notes: '' });
-  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Vendor | 'new' | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['vendors'],
-    queryFn: () => api.get<{ rows: { id: number; name: string; processes: string; contact: string; gst_no: string }[] }>('/api/vendors'),
+    queryFn: () => api.get<{ rows: Vendor[] }>('/api/vendors'),
   });
 
   const save = useMutation({
-    mutationFn: () => api.post('/api/vendors', form),
+    mutationFn: (v: Partial<Vendor>) => v.id ? api.patch(`/api/vendors/${v.id}`, v) : api.post('/api/vendors', v),
     onSuccess: () => {
       toast.ok('Vendor saved');
-      setAdding(false);
-      setForm({ name: '', processes: '', contact: '', gst_no: '', notes: '' });
+      setEditing(null);
       void qc.invalidateQueries({ queryKey: ['vendors'] });
     },
     onError: (e) => toast.error(e),
@@ -1069,14 +1071,14 @@ function VendorsTab({ canEdit }: { canEdit: boolean }) {
       {canEdit && (
         <div className="toolbar">
           <span className="grow" />
-          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+          <button type="button" className="btn btn-primary" onClick={() => setEditing('new')}>
             <Icon.Plus size={16} /> Add a vendor
           </button>
         </div>
       )}
       <div className="table-wrap">
         <table className="data stack">
-          <thead><tr><th>Vendor</th><th>Processes</th><th>Contact</th><th>GST</th></tr></thead>
+          <thead><tr><th>Vendor</th><th>Processes</th><th>Contact</th><th>GST</th><th /></tr></thead>
           <tbody>
             {data!.rows.map((v) => (
               <tr key={v.id}>
@@ -1084,36 +1086,60 @@ function VendorsTab({ canEdit }: { canEdit: boolean }) {
                 <td data-label="Processes">{v.processes || '—'}</td>
                 <td data-label="Contact">{v.contact || '—'}</td>
                 <td data-label="GST" className="mono tiny">{v.gst_no || '—'}</td>
+                <td data-label="">
+                  {canEdit && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(v)}>Edit</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {adding && (
-        <Modal title="Add a vendor" onClose={() => setAdding(false)}
-          footer={
-            <>
-              <button type="button" className="btn" onClick={() => setAdding(false)}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={!form.name || save.isPending}
-                onClick={() => save.mutate()}>
-                {save.isPending && <span className="spinner" />}Save
-              </button>
-            </>
-          }>
-          <div className="col" style={{ gap: 'var(--s-4)' }}>
-            <TextField label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
-            <TextField label="Processes" value={form.processes}
-              onChange={(v) => setForm({ ...form, processes: v })}
-              placeholder="Print, Embroidery" help="comma separated" />
-            <div className="line-grid">
-              <TextField label="Contact" value={form.contact} onChange={(v) => setForm({ ...form, contact: v })} />
-              <TextField label="GST number" value={form.gst_no} onChange={(v) => setForm({ ...form, gst_no: v })} />
-            </div>
-          </div>
-        </Modal>
+      {editing && (
+        <VendorModal vendor={editing === 'new' ? null : editing} busy={save.isPending}
+          onClose={() => setEditing(null)} onSave={(v) => save.mutate(v)} />
       )}
     </>
+  );
+}
+
+function VendorModal({ vendor, onClose, onSave, busy }: {
+  vendor: Vendor | null; onClose: () => void; onSave: (v: Partial<Vendor>) => void; busy: boolean;
+}) {
+  const [form, setForm] = useState<Partial<Vendor>>(vendor ?? {
+    name: '', processes: '', contact: '', gst_no: '', notes: '',
+  });
+  const set = (n: Partial<Vendor>) => setForm((f) => ({ ...f, ...n }));
+
+  return (
+    <Modal
+      title={vendor ? `Edit ${vendor.name}` : 'Add a vendor'}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={busy || !form.name}
+            onClick={() => onSave(form)}>
+            {busy && <span className="spinner" />}Save
+          </button>
+        </>
+      }
+    >
+      <div className="col" style={{ gap: 'var(--s-4)' }}>
+        <TextField label="Name" value={form.name ?? ''} onChange={(v) => set({ name: v })} required
+          disabled={Boolean(vendor)}
+          help={vendor ? 'Job-work entries and cost sheets carry this name as text, so it cannot be changed here.' : undefined} />
+        <TextField label="Processes" value={form.processes ?? ''}
+          onChange={(v) => set({ processes: v })}
+          placeholder="Print, Embroidery" help="comma separated" />
+        <div className="line-grid">
+          <TextField label="Contact" value={form.contact ?? ''} onChange={(v) => set({ contact: v })} />
+          <TextField label="GST number" value={form.gst_no ?? ''} onChange={(v) => set({ gst_no: v })} />
+        </div>
+      </div>
+    </Modal>
   );
 }
 
