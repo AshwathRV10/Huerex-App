@@ -54,6 +54,11 @@
   --rail-w: 248px;
   --rail-w-collapsed: 64px;
   --topbar-h: 60px;
+  /* Roughly what sits above a table on a normal screen: the top bar, the page
+     heading, a toolbar and the gaps between them. Tables are capped to what is
+     left so their header rows can freeze against something that really
+     scrolls. Raise it on a page that carries more above the table. */
+  --table-chrome: 17rem;
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur: 160ms;
