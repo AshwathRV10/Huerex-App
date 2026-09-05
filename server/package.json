@@ -12,7 +12,7 @@
     "seed": "tsx src/db/seed.ts",
     "backup": "tsx src/jobs/backup-cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "test:rbac": "node tests/rbac.mjs"
   },
   "dependencies": {

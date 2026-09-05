@@ -66,7 +66,24 @@ one. Replace them before quoting anything to a buyer.
 ## 3. Settings
 
 Everything is an environment variable, and every one has a sensible default.
-Put them in `/etc/huerex.env`:
+
+**Put the database somewhere the installation folder is not.** Left alone, it
+is written to `data/huerex.sqlite` *inside* the app folder, and the nightly
+backups land in `backups/` beside it. That is fine until the first upgrade:
+whoever replaces the folder — deleting it and unpacking a new download is the
+usual way — takes the factory's entire history and every backup of it in one
+go. Point `DB_PATH` and `BACKUP_DIR` at somewhere outside, once, and upgrades
+stop being able to touch your data.
+
+On Linux, put the settings in `/etc/huerex.env` and let systemd read it
+(`EnvironmentFile=`, in the unit below). Anywhere else — Windows, a Mac, or
+just `npm start` by hand — put a file called `.env` in the app folder next to
+`package.json`, in the same `KEY=value` format; the app reads it at startup,
+and `npm run seed` and `npm run backup` read it too, so all three agree on
+where the database is. Anything you set as a real environment variable still
+wins over the file. Copy `.env.example` to `.env` for a commented starting
+point. `.env` is gitignored, so your settings survive a `git pull` and never
+get committed.
 
 ```ini
 # --- where things live -------------------------------------------------------
