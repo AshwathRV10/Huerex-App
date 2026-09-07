@@ -1018,7 +1018,7 @@ function BuyerModal({ buyer, onClose, onSave, busy }: {
             Whether the buyer pays for it decides whether it is revenue or a gift.
           </p>
           <div className="line-grid">
-            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? 0} step={0.5}
+            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? 0}
               onChange={(v) => set({ excess_pct: v })} />
             <div className="field">
               <label>Paid for</label>
@@ -1030,7 +1030,7 @@ function BuyerModal({ buyer, onClose, onSave, busy }: {
                 <span className="tiny">{form.excess_billable ? 'Invoiced with the order' : 'Shipped free'}</span>
               </label>
             </div>
-            <NumField label="Shortfall tolerance" suffix="%" value={form.shortfall_tolerance_pct ?? 0} step={0.5}
+            <NumField label="Shortfall tolerance" suffix="%" value={form.shortfall_tolerance_pct ?? 0}
               onChange={(v) => set({ shortfall_tolerance_pct: v })}
               help="how short they will accept" />
           </div>

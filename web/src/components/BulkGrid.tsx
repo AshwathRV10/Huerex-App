@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { NumericInput } from './NumericInput';
 import { Combobox } from './Combobox';
 import { useToast } from '../lib/toast';
 import { today } from '../lib/format';
@@ -357,13 +358,18 @@ export function Cell({ col, value, onChange, disabled, autoFocus, id }: {
   disabled?: boolean;
   autoFocus?: boolean;
   /**
-   * Ties a visible label to this control. The grid's own header does that job
-   * on a desk; anywhere the cell sits under a <label> — the phone cards, the
-   * correction dialog — the label needs something to point at, or clicking it
-   * focuses nothing and a screen reader reads the field unnamed.
+   * Ties a visible label to this control. Anywhere the cell sits under a
+   * <label> — the phone cards, the correction dialog — the label needs
+   * something to point at, or clicking it focuses nothing and a screen reader
+   * reads the field unnamed.
    */
   id?: string;
 }) {
+  // On a desk the column header names the cell to the eye, but a <th> does not
+  // name an <input> in another cell to anything else: no screen reader, and no
+  // test that asks for a field by name. Where there is no visible label to
+  // point at, the column's own label does the naming.
+  const named = id ? {} : { 'aria-label': col.label };
   if (col.type === 'combo' && col.list) {
     return (
       <Combobox
@@ -395,19 +401,21 @@ export function Cell({ col, value, onChange, disabled, autoFocus, id }: {
   }
   if (col.type === 'number') {
     return (
-      <input
+      <NumericInput
         id={id}
-        type="number" inputMode="decimal" className="input input-num"
-        min={col.min ?? 0} step={col.step ?? 1} disabled={disabled} autoFocus={autoFocus}
+        {...named}
+        className="input input-num"
+        min={col.min ?? 0} disabled={disabled} autoFocus={autoFocus}
         placeholder={col.placeholder ?? '0'}
-        value={value === 0 || value === undefined || value === '' ? (value === 0 ? '0' : '') : String(value)}
-        onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+        value={typeof value === 'number' ? value : Number(value ?? 0)}
+        onChange={onChange}
       />
     );
   }
   return (
     <input
       id={id}
+      {...named}
       type={col.type === 'date' ? 'date' : 'text'}
       className="input" disabled={disabled} autoFocus={autoFocus}
       placeholder={col.placeholder}

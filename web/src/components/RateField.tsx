@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { NumericInput } from './NumericInput';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
@@ -35,7 +36,6 @@ interface Props {
   label?: string;
   prefix?: string;
   suffix?: string;
-  step?: number;
   disabled?: boolean;
   /** show suggestions even when a value is already present */
   always?: boolean;
@@ -43,7 +43,7 @@ interface Props {
 }
 
 export function RateField({
-  context, value, onChange, label, prefix = '₹', suffix, step = 0.01,
+  context, value, onChange, label, prefix = '₹', suffix,
   disabled, always = false, className,
 }: Props) {
   const id = useId();
@@ -75,18 +75,15 @@ export function RateField({
       {label && <label htmlFor={id}>{label}</label>}
       <div className="input-affix">
         {prefix && <span className="prefix">{prefix}</span>}
-        <input
+        <NumericInput
           id={id}
-          type="number"
-          inputMode="decimal"
           className="input input-num"
-          step={step}
           min={0}
           disabled={disabled}
-          value={Number.isFinite(value) ? String(value) : ''}
+          value={value}
           placeholder={best ? String(best.rate) : '0'}
           onFocus={() => setTouched(true)}
-          onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+          onChange={onChange}
         />
         {suffix && <span className="suffix">{suffix}</span>}
       </div>
@@ -118,10 +115,10 @@ export function RateField({
 
 /** Plain number field, matching RateField's shape so rows line up. */
 export function NumField({
-  label, value, onChange, suffix, prefix, step = 1, min = 0, max, disabled, help, className, placeholder,
+  label, value, onChange, suffix, prefix, min = 0, max, disabled, help, className, placeholder,
 }: {
   label?: string; value: number; onChange: (v: number) => void;
-  suffix?: string; prefix?: string; step?: number; min?: number; max?: number;
+  suffix?: string; prefix?: string; min?: number; max?: number;
   disabled?: boolean; help?: string; className?: string; placeholder?: string;
 }) {
   const id = useId();
@@ -130,16 +127,14 @@ export function NumField({
       {label && <label htmlFor={id}>{label}</label>}
       <div className="input-affix">
         {prefix && <span className="prefix">{prefix}</span>}
-        <input
+        <NumericInput
           id={id}
-          type="number"
-          inputMode="decimal"
           className="input input-num"
-          step={step} min={min} max={max}
+          min={min} max={max}
           disabled={disabled}
           placeholder={placeholder}
-          value={Number.isFinite(value) ? String(value) : ''}
-          onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+          value={value}
+          onChange={onChange}
         />
         {suffix && <span className="suffix">{suffix}</span>}
       </div>

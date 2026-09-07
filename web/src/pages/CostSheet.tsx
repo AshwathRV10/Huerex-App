@@ -337,7 +337,7 @@ export function CostSheetPage() {
           <div className="line-grid">
             <NumField label="Order quantity" value={sheet.order_qty} onChange={() => undefined} disabled
               help="from the order" />
-            <NumField label="Excess %" value={draft.excess_pct} step={0.5} disabled={!editable}
+            <NumField label="Excess %" value={draft.excess_pct} disabled={!editable}
               suffix="%" onChange={(v) => patch({ excess_pct: v })}
               help="this buyer's rule" />
             <div className="field">
@@ -350,7 +350,7 @@ export function CostSheetPage() {
                 <span className="tiny">{draft.excess_billable ? 'Yes — invoiced' : 'No — we absorb it'}</span>
               </label>
             </div>
-            <NumField label="Rejection allowance %" value={draft.rejection_pct} step={0.5} disabled={!editable}
+            <NumField label="Rejection allowance %" value={draft.rejection_pct} disabled={!editable}
               suffix="%" onChange={(v) => patch({ rejection_pct: v })}
               help="made but not shipped" />
           </div>
@@ -397,7 +397,7 @@ export function CostSheetPage() {
             <Combobox list="currencies" value={draft.currency} label="Currency"
               disabled={!editable || !can('costing.selling_price.edit')}
               onChange={(v) => patch({ currency: v })} />
-            <NumField label="₹ per unit of currency" value={draft.fx_rate} step={0.01}
+            <NumField label="₹ per unit of currency" value={draft.fx_rate}
               disabled={!editable || !can('costing.selling_price.edit') || draft.currency === 'INR'}
               onChange={(v) => patch({ fx_rate: v })}
               help={draft.currency === 'INR' ? 'rupees, so 1' : 'used to compare with cost'} />
@@ -413,7 +413,7 @@ export function CostSheetPage() {
             <Combobox list="price_basis" value={draft.price_basis} label="Basis"
               disabled={!editable || !can('costing.selling_price.edit')}
               onChange={(v) => patch({ price_basis: v })} />
-            <NumField label="Target margin %" value={draft.target_margin_pct} suffix="%" step={0.5}
+            <NumField label="Target margin %" value={draft.target_margin_pct} suffix="%"
               disabled={!editable} onChange={(v) => patch({ target_margin_pct: v })}
               help="what price would hit it" />
           </div>
@@ -619,12 +619,12 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                 onChange={(v) => setLine(i, { colour: v })} help="blank = every colour" />
               <Combobox list="fabric_parts" label="Part" value={line.part} disabled={!editable}
                 onChange={(v) => setLine(i, { part: v })} />
-              <NumField label="Consumption" suffix="g/pc" value={line.consumption_g_per_pc} step={1}
+              <NumField label="Consumption" suffix="g/pc" value={line.consumption_g_per_pc}
                 disabled={!editable} onChange={(v) => setLine(i, { consumption_g_per_pc: v })} />
-              <NumField label="Wastage" suffix="%" value={line.wastage_pct} step={0.5}
+              <NumField label="Wastage" suffix="%" value={line.wastage_pct}
                 disabled={!editable} onChange={(v) => setLine(i, { wastage_pct: v })}
                 help="cutting loss on top" />
-              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5}
+              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct}
                 disabled={!editable} onChange={(v) => setLine(i, { applies_qty_pct: v })}
                 help="% of pieces" />
             </div>
@@ -671,7 +671,7 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, rate_per_kg: v } : x)),
                         })} />
-                      <NumField label={ci === 0 ? 'Loss' : undefined} suffix="%" value={c.loss_pct} step={0.5}
+                      <NumField label={ci === 0 ? 'Loss' : undefined} suffix="%" value={c.loss_pct}
                         disabled={!editable}
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, loss_pct: v } : x)),
@@ -725,16 +725,16 @@ function TrimBlock({ draft, patch, editable, memoryCtx, block }: {
               onChange={(v) => setLine(i, { trim_item: v })} required />
             <Combobox list="colours" label="Colour" value={line.colour} disabled={!editable}
               onChange={(v) => setLine(i, { colour: v })} help="blank = all" />
-            <NumField label="Qty / garment" value={line.qty_per_pc} step={0.25} disabled={!editable}
+            <NumField label="Qty / garment" value={line.qty_per_pc} disabled={!editable}
               onChange={(v) => setLine(i, { qty_per_pc: v })} />
             <Combobox list="trim_uoms" label="Unit" value={line.uom} disabled={!editable}
               onChange={(v) => setLine(i, { uom: v })} />
             <RateField label="Rate" prefix="₹" suffix={`/${line.uom || 'pc'}`} disabled={!editable}
               context={{ kind: 'trim', ...memoryCtx, trim_item: line.trim_item, colour: line.colour, uom: line.uom } as RateContext}
               value={line.rate_per_unit} onChange={(v) => setLine(i, { rate_per_unit: v })} />
-            <NumField label="Wastage" suffix="%" value={line.wastage_pct} step={0.5} disabled={!editable}
+            <NumField label="Wastage" suffix="%" value={line.wastage_pct} disabled={!editable}
               onChange={(v) => setLine(i, { wastage_pct: v })} />
-            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5} disabled={!editable}
+            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} disabled={!editable}
               onChange={(v) => setLine(i, { applies_qty_pct: v })} />
           </div>
           <LineFoot line={block?.lines[i]} editable={editable}
@@ -774,11 +774,11 @@ function JobWorkBlock({ draft, patch, editable, memoryCtx, block }: {
             <RateField label="Rate" suffix="/pc" disabled={!editable}
               context={{ kind: 'jobwork', ...memoryCtx, process: line.process, vendor: line.vendor, colour: line.colour, uom: 'pc' } as RateContext}
               value={line.rate_per_pc} onChange={(v) => setLine(i, { rate_per_pc: v })} />
-            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5} disabled={!editable}
+            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} disabled={!editable}
               onChange={(v) => setLine(i, { applies_qty_pct: v })} help="e.g. front panel only" />
-            <NumField label="Vendor loss" suffix="%" value={line.vendor_loss_pct} step={0.5} disabled={!editable}
+            <NumField label="Vendor loss" suffix="%" value={line.vendor_loss_pct} disabled={!editable}
               onChange={(v) => setLine(i, { vendor_loss_pct: v })} help="paid for, never returned" />
-            <NumField label="Freight" prefix="₹" value={line.freight_per_order} step={100} disabled={!editable}
+            <NumField label="Freight" prefix="₹" value={line.freight_per_order} disabled={!editable}
               onChange={(v) => setLine(i, { freight_per_order: v })} help="for the whole order" />
           </div>
           <LineFoot line={block?.lines[i]} editable={editable}
@@ -826,15 +826,15 @@ function CmtBlock({ draft, patch, editable, memoryCtx, block }: {
               value={line.rate} onChange={(v) => setLine(i, { rate: v })} />
             {line.basis === 'per_sam_min' && (
               <>
-                <NumField label="SAM" suffix="min" value={line.sam_min} step={0.5} disabled={!editable}
+                <NumField label="SAM" suffix="min" value={line.sam_min} disabled={!editable}
                   onChange={(v) => setLine(i, { sam_min: v })} />
-                <NumField label="Efficiency" suffix="%" value={line.efficiency_pct} step={5} disabled={!editable}
+                <NumField label="Efficiency" suffix="%" value={line.efficiency_pct} disabled={!editable}
                   onChange={(v) => setLine(i, { efficiency_pct: v })}
                   help="65% means each SAM minute costs 1.54" />
               </>
             )}
             {line.basis !== 'per_order' && line.basis !== 'pct_of_cost' && (
-              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5} disabled={!editable}
+              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} disabled={!editable}
                 onChange={(v) => setLine(i, { applies_qty_pct: v })} />
             )}
           </div>

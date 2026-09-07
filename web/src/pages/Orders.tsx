@@ -207,9 +207,9 @@ function NewOrderModal({ onClose }: { onClose: () => void }) {
           <DateField label="Order date" value={form.order_date} onChange={(v) => set({ order_date: v })} />
           <DateField label="Ex-factory date" value={form.ex_factory_date}
             onChange={(v) => set({ ex_factory_date: v })} />
-          <NumField label="SAM" suffix="min" value={form.sam} step={0.5} onChange={(v) => set({ sam: v })}
+          <NumField label="SAM" suffix="min" value={form.sam} onChange={(v) => set({ sam: v })}
             help="drives efficiency and capacity" />
-          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct} step={0.5}
+          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct}
             onChange={(v) => set({ buffer_pct: v })} help="on top of excess" />
         </div>
         <div className="line-grid">
@@ -378,7 +378,7 @@ function OrderOverview({ data }: { data: OrderDetailData }) {
             onChange={(v) => set({ order_qty: v })} />
           <Combobox list="order_status" label="Status" value={form.status} disabled={!editable}
             allowCreate={false} onChange={(v) => set({ status: v })} />
-          <NumField label="SAM" suffix="min" value={form.sam} step={0.5} disabled={!editable}
+          <NumField label="SAM" suffix="min" value={form.sam} disabled={!editable}
             onChange={(v) => set({ sam: v })} />
         </div>
         <TextField label="Style" value={form.style} disabled={!editable} onChange={(v) => set({ style: v })} />
@@ -397,10 +397,10 @@ function OrderOverview({ data }: { data: OrderDetailData }) {
             onChange={(v) => set({ merchandiser: v })} />
           <Combobox list="team" label="Planner" value={form.planner} disabled={!editable}
             onChange={(v) => set({ planner: v })} />
-          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct} step={0.5} disabled={!editable}
+          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct} disabled={!editable}
             onChange={(v) => set({ buffer_pct: v })} help="loss allowance, on top of excess" />
           {can('orders.excess_pct.view') && (
-            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? data.excess_pct} step={0.5}
+            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? data.excess_pct}
               disabled={!editable || !can('orders.excess_pct.edit')}
               onChange={(v) => set({ excess_pct: v })}
               help={form.excess_pct === null ? `inherited from ${o.buyer}` : 'overrides the buyer default'} />

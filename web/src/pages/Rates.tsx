@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { NumericInput } from '../components/NumericInput';
 import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
 import { Confirm, Empty, Loading, Modal, PageHead } from '../components/ui';
@@ -299,6 +300,7 @@ function EditRateModal({ rate, onClose, onSave, busy }: {
   rate: RateRow; onClose: () => void; onSave: (rate: number) => void; busy: boolean;
 }) {
   const [value, setValue] = useState(rate.rate);
+  const rateId = useId();
   return (
     <Modal
       title="Change a remembered rate"
@@ -325,9 +327,9 @@ function EditRateModal({ rate, onClose, onSave, busy }: {
           rate they were saved with. It changes what the app offers next time.
         </p>
         <div className="field" style={{ maxWidth: 220 }}>
-          <label>Rate {unit(rate.uom) || 'per unit'}</label>
-          <input type="number" className="input input-num" step={0.01} value={value}
-            onChange={(e) => setValue(Number(e.target.value))} autoFocus />
+          <label htmlFor={rateId}>Rate {unit(rate.uom) || 'per unit'}</label>
+          <NumericInput id={rateId} className="input input-num" value={value}
+            onChange={setValue} autoFocus />
         </div>
       </div>
     </Modal>
