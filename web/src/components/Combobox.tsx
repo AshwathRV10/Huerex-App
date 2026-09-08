@@ -25,6 +25,13 @@ interface Props {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  /**
+   * Names the field where no visible label is drawn — a build-up row after the
+   * first, whose column heading sits several rows above it. Without it the
+   * control reaches a screen reader unnamed. It repeats the visible wording so
+   * voice control still matches, per WCAG 2.5.3.
+   */
+  ariaLabel?: string;
   placeholder?: string;
   /** turn off in-place creation for lists that must stay closed */
   allowCreate?: boolean;
@@ -41,7 +48,7 @@ interface Props {
 }
 
 export function Combobox({
-  list, value, onChange, label, placeholder, allowCreate = true, extra,
+  list, value, onChange, label, ariaLabel, placeholder, allowCreate = true, extra,
   disabled, required, autoFocus, className, help, error, onEnterNext, id,
 }: Props) {
   const generatedId = useId();
@@ -160,6 +167,7 @@ export function Combobox({
           ref={inputRef}
           className="input combo-input"
           role="combobox"
+          aria-label={ariaLabel}
           aria-expanded={open}
           aria-controls={`${inputId}-menu`}
           aria-autocomplete="list"

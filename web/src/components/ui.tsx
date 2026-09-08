@@ -68,8 +68,22 @@ export function Modal({ title, subtitle, onClose, children, footer, wide }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
+  // Callers pass an inline `onClose={() => ...}`, a fresh function on every
+  // render of whoever owns the modal. Reading it through a ref, updated every
+  // render but never itself a dependency, means the effect below sees a stable
+  // identity regardless of how often that owner re-renders.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // Runs once, when the dialog opens. Keyed on `onClose` it re-ran whenever
+    // the owning component re-rendered, calling ref.current?.focus() again and
+    // throwing focus back onto the dialog shell, away from whatever field you
+    // were typing in. That is how the vendor form — which used to keep its
+    // state in the same component as this call — took one keystroke and then
+    // went dead. Every modal now holds its own form state, so nothing hits
+    // this path today; the empty dependency list is what keeps it that way.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
     document.addEventListener('keydown', onKey);
     // Focus the dialog so Escape works and screen readers announce it.
     ref.current?.focus();
@@ -79,7 +93,7 @@ export function Modal({ title, subtitle, onClose, children, footer, wide }: {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>

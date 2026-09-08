@@ -207,9 +207,9 @@ function NewOrderModal({ onClose }: { onClose: () => void }) {
           <DateField label="Order date" value={form.order_date} onChange={(v) => set({ order_date: v })} />
           <DateField label="Ex-factory date" value={form.ex_factory_date}
             onChange={(v) => set({ ex_factory_date: v })} />
-          <NumField label="SAM" suffix="min" value={form.sam} step={0.5} onChange={(v) => set({ sam: v })}
+          <NumField label="SAM" suffix="min" value={form.sam} onChange={(v) => set({ sam: v })}
             help="drives efficiency and capacity" />
-          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct} step={0.5}
+          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct}
             onChange={(v) => set({ buffer_pct: v })} help="on top of excess" />
         </div>
         <div className="line-grid">
@@ -323,6 +323,7 @@ export function OrderDetailPage() {
           { id: 'overview', label: 'Overview' },
           { id: 'route', label: 'Route', count: data.route.length },
           { id: 'matrix', label: 'Colour × size', count: data.matrix.length },
+          { id: 'fabric', label: 'Fabric plan' },
         ]}
         active={tab}
         onChange={setTab}
@@ -331,6 +332,7 @@ export function OrderDetailPage() {
       {tab === 'overview' && <OrderOverview data={data} />}
       {tab === 'route' && <RouteEditor orderNo={o.order_no} steps={data.route} />}
       {tab === 'matrix' && <MatrixEditor orderNo={o.order_no} />}
+      {tab === 'fabric' && <FabricPlanEditor orderNo={o.order_no} />}
     </>
   );
 }
@@ -378,7 +380,7 @@ function OrderOverview({ data }: { data: OrderDetailData }) {
             onChange={(v) => set({ order_qty: v })} />
           <Combobox list="order_status" label="Status" value={form.status} disabled={!editable}
             allowCreate={false} onChange={(v) => set({ status: v })} />
-          <NumField label="SAM" suffix="min" value={form.sam} step={0.5} disabled={!editable}
+          <NumField label="SAM" suffix="min" value={form.sam} disabled={!editable}
             onChange={(v) => set({ sam: v })} />
         </div>
         <TextField label="Style" value={form.style} disabled={!editable} onChange={(v) => set({ style: v })} />
@@ -397,10 +399,10 @@ function OrderOverview({ data }: { data: OrderDetailData }) {
             onChange={(v) => set({ merchandiser: v })} />
           <Combobox list="team" label="Planner" value={form.planner} disabled={!editable}
             onChange={(v) => set({ planner: v })} />
-          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct} step={0.5} disabled={!editable}
+          <NumField label="Cutting buffer" suffix="%" value={form.buffer_pct} disabled={!editable}
             onChange={(v) => set({ buffer_pct: v })} help="loss allowance, on top of excess" />
           {can('orders.excess_pct.view') && (
-            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? data.excess_pct} step={0.5}
+            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? data.excess_pct}
               disabled={!editable || !can('orders.excess_pct.edit')}
               onChange={(v) => set({ excess_pct: v })}
               help={form.excess_pct === null ? `inherited from ${o.buyer}` : 'overrides the buyer default'} />
@@ -537,6 +539,254 @@ interface MatrixCell {
   planned_cut: number; cum_cut: number; bal_to_cut: number; good: number;
   rejected: number; packed: number; shipped: number; total_wip: number;
   where_now: string; flag: string;
+}
+
+/* ------------------------------------------------------------ fabric plan */
+
+export interface PlannedFabric {
+  fabric_type: string; colour: string; part: string;
+  grammage_g_per_pc: number; excess_pct: number; notes: string;
+  pieces: number; fabricKg: number; yarnKg: number;
+}
+
+interface PlanVsActual {
+  fabric_type: string; colour: string;
+  plannedYarnKg: number; receivedKg: number;
+  lossPct: number | null; plannedLossPct: number;
+}
+
+interface FabricPlan {
+  lines: PlannedFabric[]; pieces: number; fabricKg: number; yarnKg: number;
+  againstPlan: PlanVsActual[];
+}
+
+const FABRIC_COLUMNS: GridColumn[] = [
+  { key: 'fabric_type', label: 'Fabric', type: 'combo', list: 'fabric_types', required: true, width: 170 },
+  { key: 'colour', label: 'Colour', type: 'combo', list: 'colours', carry: true, width: 150,
+    hint: 'blank = every colour' },
+  { key: 'part', label: 'Part', type: 'combo', list: 'fabric_parts', carry: true, width: 120 },
+  { key: 'grammage_g_per_pc', label: 'g/pc', type: 'number', required: true, width: 100,
+    hint: 'finished cloth per garment' },
+  { key: 'excess_pct', label: 'Excess %', type: 'number', width: 100, carry: true,
+    hint: 'process loss, yarn over cloth' },
+  { key: 'notes', label: 'Notes', type: 'text', width: 180 },
+];
+
+const FABRIC_BLANK = makeBlank(FABRIC_COLUMNS);
+
+/**
+ * What yarn to buy, worked out the day the order lands.
+ *
+ * This is the sum a merchant does on paper — pieces × grammage, plus the
+ * excess that disappears in knitting and dyeing — and then keeps in a
+ * notebook. Keeping it here means the cost sheet can be built from the same
+ * figures instead of re-typed, and once the cloth is in, what arrived can be
+ * measured against what was taken.
+ */
+function FabricPlanEditor({ orderNo }: { orderNo: string }) {
+  const { can } = useSession();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [rows, setRows] = useState<GridRow[]>([]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['fabric-plan', orderNo],
+    queryFn: () => api.get<FabricPlan>(`/api/orders/${encodeURIComponent(orderNo)}/fabrics`),
+  });
+
+  const save = useMutation({
+    mutationFn: () => api.put(`/api/orders/${encodeURIComponent(orderNo)}/fabrics`, {
+      fabrics: filledRows(rows, FABRIC_COLUMNS, FABRIC_BLANK),
+    }),
+    onSuccess: () => {
+      toast.ok('Fabric plan saved');
+      setEditing(false);
+      void qc.invalidateQueries({ queryKey: ['fabric-plan', orderNo] });
+    },
+    onError: (e) => toast.error(e),
+  });
+
+  if (isLoading || !data) return <Loading rows={5} />;
+
+  const startEditing = () => {
+    setRows([
+      ...data.lines.map((l) => ({
+        fabric_type: l.fabric_type, colour: l.colour, part: l.part,
+        grammage_g_per_pc: l.grammage_g_per_pc, excess_pct: l.excess_pct, notes: l.notes,
+      })),
+      { ...FABRIC_BLANK },
+    ]);
+    setEditing(true);
+  };
+
+  // The same arithmetic the server does, so the figures move as they are typed.
+  const preview = filledRows(rows, FABRIC_COLUMNS, FABRIC_BLANK).map((r) => {
+    const cloth = (data.pieces * Number(r.grammage_g_per_pc ?? 0)) / 1000;
+    return cloth * (1 + Math.max(0, Number(r.excess_pct ?? 0)) / 100);
+  }).reduce((s, kg) => s + kg, 0);
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div>
+          <h3>Fabric plan</h3>
+          <p className="hint">
+            How much yarn to book for this order. <b>{qty(data.pieces)}</b> garments —
+            the order and the excess that ships with it — at the grammage below, plus what
+            the process loses between the yarn going out and the cloth coming back.
+          </p>
+        </div>
+        {can('orders.edit') && (
+          editing ? (
+            <div className="row">
+              <button type="button" className="btn btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+              <button type="button" className="btn btn-primary btn-sm" disabled={save.isPending}
+                onClick={() => save.mutate()}>
+                {save.isPending && <span className="spinner" />}Save
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={startEditing}>
+              {data.lines.length ? 'Edit the plan' : 'Plan the fabric'}
+            </button>
+          )
+        )}
+      </div>
+
+      <div className="card-body col" style={{ gap: 'var(--s-3)' }}>
+        {editing ? (
+          <>
+            <BulkGrid columns={FABRIC_COLUMNS} rows={rows} onChange={setRows}
+              blank={FABRIC_BLANK}
+              validate={(r) => {
+                if (!r.fabric_type) return 'Which fabric?';
+                if (!Number(r.grammage_g_per_pc)) return 'How many grams of it per garment?';
+                return null;
+              }} />
+            <p className="tiny muted">
+              Yarn to buy, as typed: <b>{preview.toFixed(2)} kg</b>
+            </p>
+          </>
+        ) : data.lines.length === 0 ? (
+          <Empty title="No fabric planned yet"
+            body="Enter each cloth this order needs and how many grams of it a garment takes, and the yarn to book is worked out for you."
+            icon={<Icon.Layers size={20} />}
+            action={can('orders.edit')
+              ? <button type="button" className="btn btn-primary btn-sm" onClick={startEditing}>Plan the fabric</button>
+              : undefined} />
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="data stack">
+                <thead>
+                  <tr>
+                    <th>Fabric</th><th>Colour</th><th>Part</th>
+                    <th className="num">g/pc</th><th className="num">Cloth</th>
+                    <th className="num">Excess</th><th className="num">Yarn to buy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.lines.map((l, i) => (
+                    <tr key={i}>
+                      <td data-label="Fabric"><b>{l.fabric_type}</b></td>
+                      <td data-label="Colour">{l.colour || 'every colour'}</td>
+                      <td data-label="Part">{l.part || '—'}</td>
+                      <td className="num" data-label="g/pc">{l.grammage_g_per_pc}</td>
+                      <td className="num" data-label="Cloth">{l.fabricKg} kg</td>
+                      <td className="num" data-label="Excess">{l.excess_pct}%</td>
+                      <td className="num" data-label="Yarn to buy"><b>{l.yarnKg} kg</b></td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colSpan={4}>Total</th>
+                    <th className="num">{data.fabricKg} kg</th>
+                    <th />
+                    <th className="num">{data.yarnKg} kg</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="tiny subtle">
+              Excess here is process loss — what disappears in knitting, dyeing and washing —
+              not cutting loss, which happens to cloth that has already arrived and is counted
+              on the cost sheet.
+            </p>
+
+            <AgainstPlan rows={data.againstPlan} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The plan against the store: yarn booked versus cloth that came back.
+ *
+ * This is what a guessed excess is worth once it has been measured. It appears
+ * on its own as the receipts are entered, and after a few orders the merchant
+ * stops guessing: navy on this jersey runs at twelve per cent, whatever the
+ * mill says.
+ *
+ * The comparison is at fabric and shade rather than per line, because the
+ * store books a receipt against a cloth and a colour and nothing finer — a
+ * body and a collar in the same shade arrive on the same roll.
+ */
+function AgainstPlan({ rows }: { rows: PlanVsActual[] }) {
+  const measured = rows.filter((r) => r.lossPct !== null);
+  if (measured.length === 0) {
+    return (
+      <p className="tiny subtle">
+        Nothing received against this plan yet. As the cloth is booked into the fabric store
+        against this order, what actually arrived is measured against what was taken.
+      </p>
+    );
+  }
+
+  return (
+    <div className="col" style={{ gap: 'var(--s-2)' }}>
+      <b className="tiny">What actually came back</b>
+      <div className="table-wrap">
+        <table className="data stack">
+          <thead>
+            <tr>
+              <th>Fabric</th><th>Colour</th>
+              <th className="num">Yarn taken</th><th className="num">Cloth in</th>
+              <th className="num">Loss</th><th className="num">Planned</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td data-label="Fabric"><b>{r.fabric_type}</b></td>
+                <td data-label="Colour">{r.colour || 'every colour'}</td>
+                <td className="num" data-label="Yarn taken">{r.plannedYarnKg} kg</td>
+                <td className="num" data-label="Cloth in">{r.receivedKg} kg</td>
+                <td className="num" data-label="Loss">
+                  {r.lossPct === null
+                    ? <span className="subtle">nothing in yet</span>
+                    : (
+                      <b style={{ color: r.lossPct > r.plannedLossPct ? 'var(--danger-fg)' : 'var(--ok-fg)' }}>
+                        {r.lossPct}%
+                      </b>
+                    )}
+                </td>
+                <td className="num" data-label="Planned">{r.plannedLossPct}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="tiny subtle">
+        A loss above what was planned means the yarn ran short of the cloth this order needs.
+        Below it means there is cloth to spare. Either way it is this factory\u2019s own figure
+        for this cloth in this shade — worth more than any rule of thumb.
+      </p>
+    </div>
+  );
 }
 
 const MATRIX_COLUMNS: GridColumn[] = [

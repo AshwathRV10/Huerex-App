@@ -187,7 +187,13 @@ export const DEFAULT_ROLES: RoleSeed[] = [
     code: 'management', name: 'Management', rank: 10,
     description: 'Sees every number including cost and margin; approves waivers and cost sheets.',
     permissions: [
-      ...ALL_PERMISSIONS.filter((p) => !p.startsWith('users.') && !p.startsWith('settings.')),
+      ...ALL_PERMISSIONS.filter((p) => !p.startsWith('users.') && !p.startsWith('settings.')
+        // Renaming or retiring a master value reaches every screen at once: a
+        // colour is carried as plain text on cutting rows, cost sheets and the
+        // rate library alike, so changing one there changes what those records
+        // appear to say. Management may add values; tidying the lists is the
+        // administrator's job.
+        && p !== 'masters.edit' && p !== 'masters.delete'),
       'users.view', 'settings.view',
     ],
   },
@@ -233,7 +239,11 @@ export const DEFAULT_ROLES: RoleSeed[] = [
       'orders.view', 'orders.edit',
       'cutting.view', 'sewing.view', 'jobwork.view', 'fusing.view',
       'checking.view', 'packing.view', 'shipment.view', 'inspection.view',
-      'waivers.view', 'waivers.create', 'masters.view', 'masters.create',
+      // Waivers are not the planner's. Accepting an alert the factory would
+      // otherwise act on — an order that loses money, a store that cannot
+      // cover the cut — is a management decision, so the screen belongs to
+      // management and the administrator and nobody else.
+      'masters.view', 'masters.create',
       'timeline.edit',
     ],
   },

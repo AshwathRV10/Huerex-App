@@ -385,6 +385,17 @@ export function registerExecution(app: FastifyInstance): void {
       owner: zText(120).default(''),
       remarks: zText(400).default(''),
     }),
+    /**
+     * Chasing a buyer approval and recording their answer are different acts.
+     * Anyone running the order book may raise one and set a date; deciding it —
+     * moving it off Pending to Approved, Rejected or Not Required — is what
+     * approvals.approve exists for, and nothing checked it.
+     */
+    guard: (req, row, before) => {
+      const now = String(row.status ?? 'Pending');
+      const was = String(before?.status ?? 'Pending');
+      if (now !== was && now !== 'Pending') assertPermission(req, 'approvals.approve');
+    },
     afterWrite: (row, action) => {
       // The gap the spreadsheet had: a blocked order waited for someone to
       // notice. Now the owner is told the moment it is raised or reopened.
@@ -418,6 +429,21 @@ export function registerExecution(app: FastifyInstance): void {
       message: 'Valid Until has to be today or later, otherwise the alert fires again immediately',
       path: ['valid_until'],
     }),
+    /**
+     * Raising a waiver and granting one are different acts.
+     *
+     * A waiver silences an alert — "this order loses money", "the store cannot
+     * cover what is left to cut", "the shipment is gated on an inspection that
+     * has not passed". Anyone running the floor may ask for one. Only somebody
+     * holding waivers.approve may grant it, which is the whole point of a
+     * screen called Management Approvals, and until now the approved box was
+     * an ordinary column that waivers.create was enough to tick.
+     */
+    guard: (req, row, before) => {
+      const now = Number(row.approved) === 1 ? 1 : 0;
+      const was = before ? (Number(before.approved) === 1 ? 1 : 0) : 0;
+      if (now !== was) assertPermission(req, 'waivers.approve');
+    },
     describe: (r) => `Waived ${r.alert_type} until ${r.valid_until}`,
   });
 

@@ -7,6 +7,9 @@ import { redact, redactMany, ORDER_SPEC } from '../rbac/fieldPolicy.js';
 import { HttpError, parse, sendCsv, zDate, zText } from '../lib/http.js';
 import { learnValue } from './masters.js';
 import { effectiveExcessPct, wipForOrder, type OrderRow } from '../engine/facts.js';
+import {
+  compareToPlan, planFabric, type FabricPlanLine, type FabricReceipt,
+} from '../engine/fabricPlan.js';
 import { plannedCut } from '../engine/flow.js';
 
 /**
@@ -89,6 +92,84 @@ function writeRoute(orderId: number, steps: z.infer<typeof RouteBody>['steps'], 
     learnValue('processes', s.process, userId);
     if (OUTSOURCED_BY_DEFAULT.has(s.process)) learnValue('jobwork_processes', s.process, userId);
   }
+}
+
+const FabricPlanBody = z.object({
+  fabrics: z.array(z.object({
+    fabric_type: zText(120).min(1, 'which fabric?'),
+    colour: zText(120).default(''),
+    part: zText(60).default('Body'),
+    grammage_g_per_pc: z.coerce.number().min(0).default(0),
+    excess_pct: z.coerce.number().min(0).max(200).default(0),
+    notes: zText(300).default(''),
+  })).max(40),
+});
+
+/**
+ * Replace an order's fabric plan.
+ *
+ * Written whole rather than row by row, the same as the route and the matrix:
+ * the screen edits a short list and saves it, and a plan half-applied because
+ * one row failed would be worse than one refused outright.
+ */
+function writeFabricPlan(
+  orderId: number,
+  fabrics: z.infer<typeof FabricPlanBody>['fabrics'],
+  userId?: number | null,
+): void {
+  const seen = new Set<string>();
+  for (const f of fabrics) {
+    // The unique index would refuse this anyway, with a message nobody can act
+    // on. Two lines for the same cloth in the same colour is one line whose
+    // grammage needs deciding.
+    const key = `${f.fabric_type}|${f.colour}|${f.part}`.toLowerCase();
+    if (seen.has(key)) {
+      throw new HttpError(
+        400,
+        `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''} (${f.part}) is listed twice. Put it on one line.`,
+        'duplicate_fabric',
+      );
+    }
+    seen.add(key);
+  }
+
+  run('DELETE FROM order_fabrics WHERE order_id = ?', [orderId]);
+  fabrics.forEach((f, i) => {
+    run(
+      `INSERT INTO order_fabrics
+         (order_id, seq, fabric_type, colour, part, grammage_g_per_pc, excess_pct, notes, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [orderId, i, f.fabric_type, f.colour, f.part, f.grammage_g_per_pc, f.excess_pct, f.notes, userId ?? null],
+    );
+    learnValue('fabric_types', f.fabric_type, userId);
+    if (f.colour) learnValue('colours', f.colour, userId);
+    if (f.part) learnValue('fabric_parts', f.part, userId);
+  });
+}
+
+/**
+ * The plan with its arithmetic done, and what the store has actually received
+ * against it — which is the half that turns a guessed excess into a measured
+ * one.
+ */
+function fabricPlanFor(order: OrderRow) {
+  const rows = all<FabricPlanLine>(
+    'SELECT * FROM order_fabrics WHERE order_id = ? ORDER BY seq, id', [order.id],
+  );
+  // Excess ships in the same cartons, so those garments are cut from these
+  // rolls and their cloth has to be bought with the rest.
+  const pieces = Math.round(order.order_qty * (1 + effectiveExcessPct(order) / 100));
+  const plan = planFabric(rows, pieces);
+
+  // Only receipts. An issue to cutting is cloth leaving the store again, and
+  // counting it here would read as loss that never happened.
+  const receipts = all<FabricReceipt>(
+    `SELECT fabric_type, colour, SUM(qty_kg) AS kg
+       FROM fabric_ledger WHERE order_id = ? AND direction = 'RECEIPT'
+      GROUP BY fabric_type, colour`, [order.id],
+  );
+
+  return { ...plan, pieces, againstPlan: compareToPlan(plan.lines, receipts) };
 }
 
 function writeMatrix(orderId: number, body: z.infer<typeof MatrixBody>, userId?: number | null): void {
@@ -270,6 +351,9 @@ function describe(impact: DeletionImpact): string {
     const body = parse(OrderBody.extend({
       route: RouteBody.shape.steps.optional(),
       matrix: MatrixBody.shape.cells.optional(),
+      // The fabric plan is decided with the order, not after it — the yarn has
+      // to be booked before anything else can start.
+      fabrics: FabricPlanBody.shape.fabrics.optional(),
     }), req.body);
 
     if (one('SELECT id FROM orders WHERE order_no = ?', [body.order_no])) {
@@ -289,6 +373,7 @@ function describe(impact: DeletionImpact): string {
       if (body.planner) learnValue('team', body.planner, userId);
       if (body.route) writeRoute(id, body.route, userId);
       if (body.matrix) writeMatrix(id, { cells: body.matrix, replace: true }, userId);
+      if (body.fabrics) writeFabricPlan(id, body.fabrics, userId);
 
       // Keep the buyer master in step, so a new buyer is immediately usable
       // with its own excess rule rather than silently defaulting to zero.
@@ -398,6 +483,36 @@ function describe(impact: DeletionImpact): string {
       before, after,
     });
     return reply.send({ steps: after });
+  });
+
+  // ------------------------------------------------------------ fabric plan
+
+  app.get('/api/orders/:orderNo/fabrics', async (req: FastifyRequest, reply: FastifyReply) => {
+    // Grammage and kilograms, no money, so anyone who plans an order may read
+    // it — the store keeper checking what is due in as much as the merchant.
+    assertPermission(req, 'orders.view');
+    const order = findOrder((req.params as { orderNo: string }).orderNo);
+    return reply.send(fabricPlanFor(order));
+  });
+
+  app.put('/api/orders/:orderNo/fabrics', async (req: FastifyRequest, reply: FastifyReply) => {
+    assertPermission(req, 'orders.edit');
+    const order = findOrder((req.params as { orderNo: string }).orderNo);
+    const before = all('SELECT * FROM order_fabrics WHERE order_id = ? ORDER BY seq, id', [order.id]);
+    const body = parse(FabricPlanBody, req.body);
+
+    tx(() => writeFabricPlan(order.id, body.fabrics, req.principal?.userId));
+    const plan = fabricPlanFor(order);
+
+    audit(req, {
+      action: 'update', entity: 'order_fabrics', entityId: order.id,
+      summary: body.fabrics.length
+        ? `Planned ${plan.yarnKg} kg of yarn for ${order.order_no}: `
+          + plan.lines.map((l) => `${l.fabric_type} ${l.yarnKg} kg`).join(', ')
+        : `Cleared the fabric plan for ${order.order_no}`,
+      before, after: plan.lines,
+    });
+    return reply.send(plan);
   });
 
   /** Copy a route from another order — most orders for a buyer travel alike. */
@@ -537,15 +652,17 @@ function describe(impact: DeletionImpact): string {
     return reply.send({ rows: all('SELECT * FROM vendors WHERE is_active = 1 ORDER BY name') });
   });
 
+  const VendorBody = z.object({
+    name: zText(160).min(1),
+    processes: zText(300).default(''),
+    contact: zText(300).default(''),
+    gst_no: zText(30).default(''),
+    notes: zText(1000).default(''),
+  });
+
   app.post('/api/vendors', async (req: FastifyRequest, reply: FastifyReply) => {
     assertPermission(req, 'vendors.create');
-    const body = parse(z.object({
-      name: zText(160).min(1),
-      processes: zText(300).default(''),
-      contact: zText(300).default(''),
-      gst_no: zText(30).default(''),
-      notes: zText(1000).default(''),
-    }), req.body);
+    const body = parse(VendorBody, req.body);
     run(
       `INSERT INTO vendors (name, processes, contact, gst_no, notes) VALUES (?,?,?,?,?)
        ON CONFLICT(name) DO UPDATE SET processes = excluded.processes, contact = excluded.contact,
@@ -555,5 +672,26 @@ function describe(impact: DeletionImpact): string {
     learnValue('vendors', body.name, req.principal?.userId);
     audit(req, { action: 'create', entity: 'vendors', summary: `Saved vendor ${body.name}`, after: body });
     return reply.code(201).send(one('SELECT * FROM vendors WHERE name = ?', [body.name]));
+  });
+
+  app.patch('/api/vendors/:id', async (req: FastifyRequest, reply: FastifyReply) => {
+    assertPermission(req, 'vendors.edit');
+    const id = Number((req.params as { id: string }).id);
+    const before = one<Record<string, unknown>>('SELECT * FROM vendors WHERE id = ?', [id]);
+    if (!before) throw new HttpError(404, 'No such vendor', 'not_found');
+    // Name is not part of the merge: job-work movements, cost-sheet lines and
+    // rate memory all carry a vendor by name as plain text, the same as a
+    // buyer does, so renaming here would silently orphan every one of them.
+    const body = parse(VendorBody, { ...before, ...(req.body as object), name: before.name });
+    run(
+      `UPDATE vendors SET processes = ?, contact = ?, gst_no = ?, notes = ? WHERE id = ?`,
+      [body.processes, body.contact, body.gst_no, body.notes, id],
+    );
+    const after = one<Record<string, unknown>>('SELECT * FROM vendors WHERE id = ?', [id]);
+    audit(req, {
+      action: 'update', entity: 'vendors', entityId: id,
+      summary: `Edited vendor ${body.name}`, before, after,
+    });
+    return reply.send(after);
   });
 }

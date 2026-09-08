@@ -87,6 +87,17 @@ console.log('test users ready\n');
 
   const write = await call(u, 'POST', '/api/costing/order/HR-002', {});
   check('cannot create a cost sheet', write.status === 403, `got ${write.status}`);
+
+  // The fabric plan is grammage and kilograms, no money, so the floor may read
+  // it — they are the ones waiting for the cloth. Deciding it is planning work.
+  const plan = await call(u, 'GET', '/api/orders/HR-002/fabrics');
+  check('can read the fabric plan', plan.status === 200, `got ${plan.status}`);
+  check('and it carries no rate or value',
+    !JSON.stringify(plan.json).match(/rate|value|cost/i));
+  const setPlan = await call(u, 'PUT', '/api/orders/HR-002/fabrics', {
+    fabrics: [{ fabric_type: 'Single Jersey', grammage_g_per_pc: 88, excess_pct: 10 }],
+  });
+  check('cannot decide the fabric plan', setPlan.status === 403, `got ${setPlan.status}`);
   console.log();
 }
 
@@ -102,6 +113,17 @@ console.log('test users ready\n');
   check('rate is absent from the payload, not merely hidden',
     row !== undefined && !('rate_per_kg' in row) && row.rate_per_kg__locked === true,
     row ? `money keys present: ${Object.keys(row).filter((k) => /rate|value/.test(k)).join(', ')}` : 'no rows');
+
+  // Redaction on the way out was never enough: the rate is deleted from every
+  // response this role sees, and could still be written back in.
+  const wrote = await call(u, 'POST', '/api/fabric', {
+    txn_date: '2026-01-05', direction: 'RECEIPT', fabric_type: 'RBAC PROBE FAB',
+    colour: 'Black', qty_kg: 100, rate_per_kg: 999.5, supplier: 'Probe Mills',
+  });
+  check('can book fabric in', wrote.status === 201, `got ${wrote.status}`);
+  check('but the rate they may not see is refused',
+    wrote.json?.rate_per_kg === null || wrote.json?.rate_per_kg === undefined,
+    `stored ${JSON.stringify(wrote.json?.rate_per_kg)}`);
 
   const ledger = await call(u, 'GET', '/api/fabric?limit=1');
   const lrow = ledger.json?.rows?.[0];
@@ -142,6 +164,15 @@ console.log('test users ready\n');
   const forced = await call(u, 'DELETE', '/api/orders/HR-002?confirm=HR-002');
   check('cannot delete an order by supplying the confirmation itself',
     forced.status === 403, `got ${forced.status}`);
+  // Vendors are master data the whole factory reads; editing one is not.
+  const vendors = await call(admin, 'GET', '/api/vendors');
+  const vendorId = (vendors.json?.rows ?? [])[0]?.id;
+  if (vendorId) {
+    check('can read vendors', (await call(u, 'GET', '/api/vendors')).status === 200);
+    const edit = await call(u, 'PATCH', `/api/vendors/${vendorId}`, { contact: 'not mine to set' });
+    check('cannot edit a vendor', edit.status === 403, `got ${edit.status}`);
+  }
+
   // The rate library is the record of why orders were priced the way they were.
   const wipe = await call(u, 'DELETE', '/api/rates/1');
   check('cannot forget a remembered rate', wipe.status === 403, `got ${wipe.status}`);
@@ -196,6 +227,130 @@ console.log('test users ready\n');
   check('the deletion is in the audit log',
     Array.isArray(rows) && rows.some((r) => String(r.summary ?? '').includes('E2E-DELETE-ME')),
     `${Array.isArray(rows) ? rows.length : 0} delete rows`);
+  console.log();
+}
+
+// ----------------------------------------------------------------- planner
+{
+  const res = await call(admin, 'POST', '/api/users', {
+    username: 'plan.test', full_name: 'Planner', email: '', roles: ['planner'], is_active: 1,
+    password: 'Testing#2026aa', must_change_pw: 0,
+  });
+  if (res.status !== 201 && res.status !== 409) { console.error('create failed', res); process.exit(1); }
+
+  const u = jar();
+  await call(u, 'POST', '/api/auth/login', { username: 'plan.test', password: 'Testing#2026aa' });
+  console.log('planner role — plans the work, does not accept the alerts:');
+
+  check('can read the route', (await call(u, 'GET', '/api/orders/HR-002/route')).status === 200);
+
+  // A waiver silences an alert the factory would otherwise act on — "this
+  // order loses money", "the store cannot cover what is left to cut".
+  // Accepting one is a management decision, not a planning one.
+  const seen = await call(u, 'GET', '/api/waivers');
+  check('cannot see the waivers screen', seen.status === 403, `got ${seen.status}`);
+  const granted = await call(u, 'POST', '/api/waivers', {
+    order_no: 'HR-002', alert_type: 'MARGIN RISK', approved: 1,
+    reason: 'approving my own waiver', valid_until: '2030-01-01',
+  });
+  check('nor grant one', granted.status === 403, `got ${granted.status}`);
+
+  // Master lists reach every screen at once, so tidying them is the
+  // administrator's job even for a role that may add to them.
+  const masters = await call(admin, 'GET', '/api/masters/colours');
+  const colour = (masters.json ?? [])[0];
+  check('can add a master value',
+    (await call(u, 'POST', '/api/masters', { list_code: 'colours', value: 'Planner Blue' })).status <= 201);
+  if (colour?.id) {
+    const renamed = await call(u, 'PATCH', `/api/masters/${colour.id}`, { value: 'Not mine to rename' });
+    check('cannot rename one', renamed.status === 403, `got ${renamed.status}`);
+    const retired = await call(u, 'DELETE', `/api/masters/${colour.id}`);
+    check('cannot retire one', retired.status === 403, `got ${retired.status}`);
+  }
+  console.log();
+}
+
+// ------------------------------------- a role the factory invented itself
+{
+  // The brief asks for configurable roles, which means the approve guard has
+  // to hold for a role nobody shipped. This one may raise a waiver and may not
+  // grant one — the exact combination the default roles never produce, and so
+  // the only thing that proves the check is on the write rather than on the
+  // screen.
+  const code = `waiver_asker_${Date.now().toString(36)}`;
+  const made = await call(admin, 'POST', '/api/roles', {
+    name: 'Waiver Asker', code, description: 'raises waivers, cannot grant them',
+    rank: 40, permissions: ['dashboard.view', 'orders.view', 'alerts.view',
+      // Holding edit is what makes this worth testing: the guard has to stop
+      // the approved box being ticked by somebody who may change every other
+      // field on the row.
+      'waivers.view', 'waivers.create', 'waivers.edit'],
+  });
+  if (made.status !== 201) { console.error('role create failed', made); process.exit(1); }
+
+  await call(admin, 'POST', '/api/users', {
+    username: 'asker.test', full_name: 'Waiver Asker', email: '', roles: [code], is_active: 1,
+    password: 'Testing#2026aa', must_change_pw: 0,
+  });
+
+  const u = jar();
+  await call(u, 'POST', '/api/auth/login', { username: 'asker.test', password: 'Testing#2026aa' });
+  console.log('a custom role that may raise a waiver but not grant one:');
+
+  const asked = await call(u, 'POST', '/api/waivers', {
+    order_no: 'HR-002', alert_type: 'AGED WIP', approved: 0,
+    reason: 'raised for management to decide', valid_until: '2030-01-01',
+  });
+  check('can raise one', asked.status === 201, `got ${asked.status}`);
+  check('and it is not approved', Number(asked.json?.approved) === 0);
+
+  const granted = await call(u, 'POST', '/api/waivers', {
+    order_no: 'HR-002', alert_type: 'DHU HIGH', approved: 1,
+    reason: 'granting my own', valid_until: '2030-01-01',
+  });
+  check('cannot grant one outright', granted.status === 403, `got ${granted.status}`);
+
+  if (asked.status === 201) {
+    const flipped = await call(u, 'PATCH', `/api/waivers/${asked.json.id}`, { approved: 1 });
+    check('nor grant the one it raised', flipped.status === 403, `got ${flipped.status}`);
+    const edited = await call(u, 'PATCH', `/api/waivers/${asked.json.id}`, { reason: 'reworded' });
+    check('but may still reword it', edited.status === 200, `got ${edited.status}`);
+  }
+  console.log();
+}
+
+// -------------------------------------------------------------- management
+{
+  const res = await call(admin, 'POST', '/api/users', {
+    username: 'mgmt.test', full_name: 'Management', email: '', roles: ['management'], is_active: 1,
+    password: 'Testing#2026aa', must_change_pw: 0,
+  });
+  if (res.status !== 201 && res.status !== 409) { console.error('create failed', res); process.exit(1); }
+
+  const u = jar();
+  await call(u, 'POST', '/api/auth/login', { username: 'mgmt.test', password: 'Testing#2026aa' });
+  console.log('management role — accepts the alerts, does not tidy the lists:');
+
+  const granted = await call(u, 'POST', '/api/waivers', {
+    order_no: 'HR-002', alert_type: 'MARGIN RISK', approved: 1,
+    reason: 'accepted, quoted before the yarn moved', valid_until: '2030-01-01',
+  });
+  check('can grant a waiver', granted.status === 201, `got ${granted.status}`);
+  check('and it is recorded as approved', Number(granted.json?.approved) === 1);
+
+  const masters = await call(admin, 'GET', '/api/masters/colours');
+  const colour = (masters.json ?? [])[0];
+  if (colour?.id) {
+    const retired = await call(u, 'DELETE', `/api/masters/${colour.id}`);
+    check('but cannot retire a master value', retired.status === 403, `got ${retired.status}`);
+  }
+
+  const roles = await call(admin, 'GET', '/api/roles');
+  const spare = (roles.json?.rows ?? []).find((r) => !r.is_system);
+  if (spare) {
+    check('and cannot delete a role',
+      (await call(u, 'DELETE', `/api/roles/${spare.id}`)).status === 403);
+  }
   console.log();
 }
 

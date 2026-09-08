@@ -264,11 +264,24 @@ function UserModal({ user, roles, onClose, onCreated }: {
 
 function RolesTab() {
   const { can } = useSession();
+  const toast = useToast();
+  const qc = useQueryClient();
   const [editing, setEditing] = useState<RoleRow | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<RoleRow | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['roles'],
     queryFn: () => api.get<{ rows: RoleRow[]; catalogue: ModuleDef[]; all_permissions: string[] }>('/api/roles'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (r: RoleRow) => api.del(`/api/roles/${r.id}`),
+    onSuccess: () => {
+      toast.ok('Role deleted');
+      setDeleting(null);
+      void qc.invalidateQueries({ queryKey: ['roles'] });
+    },
+    onError: (e) => toast.error(e),
   });
 
   if (isLoading || !data) return <Loading rows={6} />;
@@ -303,11 +316,21 @@ function RolesTab() {
             <div className="card-body">
               <div className="between tiny muted">
                 <span>{r.permissions.length} permissions</span>
-                {can('users.edit') && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(r)}>
-                    Review access
-                  </button>
-                )}
+                <div className="row" style={{ gap: 4 }}>
+                  {/* A built-in role tracks the catalogue and a role somebody
+                      still holds is in use; the server refuses both, and there
+                      is no sense offering a button that can only be refused. */}
+                  {can('users.delete') && !r.is_system && r.user_count === 0 && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDeleting(r)}>
+                      Delete
+                    </button>
+                  )}
+                  {can('users.edit') && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(r)}>
+                      Review access
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -320,6 +343,21 @@ function RolesTab() {
           catalogue={data.catalogue}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {deleting && (
+        <Confirm title={`Delete the ${deleting.name} role?`} danger confirmLabel="Delete"
+          busy={remove.isPending}
+          onClose={() => setDeleting(null)} onConfirm={() => remove.mutate(deleting)}
+          body={
+            <>
+              <p>
+                Nobody holds this role, so nobody loses access. The permissions it granted are
+                not deleted — they are part of the catalogue and any other role can grant them.
+              </p>
+              <p className="tiny muted">This is recorded in the audit log.</p>
+            </>
+          } />
       )}
     </>
   );
@@ -781,6 +819,54 @@ export function SettingsPage() {
 
 /* ================================================================ masters */
 
+interface MasterValue { id?: number; value: string; use_count: number }
+
+/**
+ * Rename a value in a list.
+ *
+ * Worth being plain about what this does. The lists feed every dropdown, but
+ * what a dropdown writes onto a cutting row or a cost sheet is the text
+ * itself, not a reference to the row here — so renaming changes what is
+ * offered from now on and leaves everything already saved reading as it did.
+ * For a typo caught early that is exactly right; for one that has been in use
+ * for months, retiring it and adding the correct value is honest, and the old
+ * entries go on saying what they always said.
+ */
+function RenameValue({ value, onClose, onSave, busy }: {
+  value: MasterValue; onClose: () => void; onSave: (v: string) => void; busy: boolean;
+}) {
+  const [text, setText] = useState(value.value);
+  const changed = text.trim() && text.trim() !== value.value;
+
+  return (
+    <Modal
+      title={`Rename “${value.value}”`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={!changed || busy}
+            onClick={() => onSave(text.trim())}>
+            {busy && <span className="spinner" />}Rename
+          </button>
+        </>
+      }
+    >
+      <div className="col" style={{ gap: 'var(--s-4)' }}>
+        <TextField label="Value" value={text} onChange={setText} required />
+        {value.use_count > 0 && (
+          <div className="banner banner-warn">
+            This value is already on <b>{value.use_count}</b>{' '}
+            {value.use_count === 1 ? 'entry' : 'entries'}. Those keep the old wording — the
+            dropdown offers the new one from now on. To correct something that has been in use
+            a while, retire it and add the right value instead.
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function MastersPage() {
   const { can } = useSession();
   const toast = useToast();
@@ -788,7 +874,11 @@ export function MastersPage() {
   const [active, setActive] = useState('colours');
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState('');
-  const [retiring, setRetiring] = useState<{ id: number; value: string } | null>(null);
+  const [retiring, setRetiring] = useState<MasterValue | null>(null);
+  const [renaming, setRenaming] = useState<MasterValue | null>(null);
+
+  // Only an administrator tidies the lists; everyone else reads them.
+  const tidying = can('masters.edit') || can('masters.delete');
 
   const lists = useQuery({
     queryKey: ['master-lists'],
@@ -797,7 +887,7 @@ export function MastersPage() {
 
   const values = useQuery({
     queryKey: ['master-values', active, q],
-    queryFn: () => api.get<{ value: string; use_count: number }[]>(`/api/masters/${active}`,
+    queryFn: () => api.get<MasterValue[]>(`/api/masters/${active}`,
       { q: q || undefined, limit: 200 }),
   });
 
@@ -809,6 +899,26 @@ export function MastersPage() {
       void qc.invalidateQueries({ queryKey: ['master-values'] });
       void qc.invalidateQueries({ queryKey: ['master-lists'] });
     },
+    onError: (e) => toast.error(e),
+  });
+
+  const done = (msg: string) => {
+    toast.ok(msg);
+    setRetiring(null);
+    setRenaming(null);
+    void qc.invalidateQueries({ queryKey: ['master-values'] });
+    void qc.invalidateQueries({ queryKey: ['master-lists'] });
+  };
+
+  const retire = useMutation({
+    mutationFn: (v: MasterValue) => api.del(`/api/masters/${v.id}`),
+    onSuccess: () => done('Retired'),
+    onError: (e) => toast.error(e),
+  });
+
+  const rename = useMutation({
+    mutationFn: (v: { id: number; value: string }) => api.patch(`/api/masters/${v.id}`, { value: v.value }),
+    onSuccess: () => done('Renamed'),
     onError: (e) => toast.error(e),
   });
 
@@ -843,7 +953,35 @@ export function MastersPage() {
             {values.isLoading ? <Loading rows={4} />
               : (values.data?.length ?? 0) === 0
                 ? <Empty title="Nothing in this list yet" icon={<Icon.Grid size={20} />} />
-                : (
+                : tidying ? (
+                  <div className="table-wrap">
+                    <table className="data stack">
+                      <thead>
+                        <tr><th>Value</th><th className="num">Used</th><th /></tr>
+                      </thead>
+                      <tbody>
+                        {values.data!.map((v) => (
+                          <tr key={v.id ?? v.value}>
+                            <td data-label="Value"><b>{v.value}</b></td>
+                            <td className="num" data-label="Used">{v.use_count || '—'}</td>
+                            <td data-label="">
+                              <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
+                                {can('masters.edit') && (
+                                  <button type="button" className="btn btn-ghost btn-sm"
+                                    onClick={() => setRenaming(v)}>Rename</button>
+                                )}
+                                {can('masters.delete') && (
+                                  <button type="button" className="btn btn-ghost btn-sm"
+                                    onClick={() => setRetiring(v)}>Retire</button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
                   <div className="row-wrap" style={{ gap: 5 }}>
                     {values.data!.map((v) => (
                       <span key={v.value} className="badge badge-lg">
@@ -874,8 +1012,28 @@ export function MastersPage() {
 
       {retiring && (
         <Confirm title={`Retire “${retiring.value}”?`} danger confirmLabel="Retire"
-          onClose={() => setRetiring(null)} onConfirm={() => setRetiring(null)}
-          body="It disappears from every dropdown but stays on the entries that already use it, so no history is lost." />
+          busy={retire.isPending}
+          onClose={() => setRetiring(null)} onConfirm={() => retire.mutate(retiring)}
+          body={
+            <>
+              <p>
+                It disappears from every dropdown but stays on the entries that already use it,
+                so no history is lost.
+              </p>
+              {retiring.use_count > 0 && (
+                <p className="tiny muted">
+                  It has been used <b>{retiring.use_count}</b> {retiring.use_count === 1 ? 'time' : 'times'}.
+                  Those entries keep it and go on reading the same.
+                </p>
+              )}
+            </>
+          } />
+      )}
+
+      {renaming && (
+        <RenameValue value={renaming} busy={rename.isPending}
+          onClose={() => setRenaming(null)}
+          onSave={(v) => rename.mutate({ id: renaming.id!, value: v })} />
       )}
     </>
   );
@@ -887,6 +1045,10 @@ interface Buyer {
   id: number; name: string; short_code: string; excess_pct: number;
   excess_billable: number; shortfall_tolerance_pct: number; default_currency: string;
   payment_terms: string; contact: string; notes: string; order_count: number;
+}
+
+interface Vendor {
+  id: number; name: string; processes: string; contact: string; gst_no: string; notes: string;
 }
 
 export function BuyersPage() {
@@ -1014,7 +1176,7 @@ function BuyerModal({ buyer, onClose, onSave, busy }: {
             Whether the buyer pays for it decides whether it is revenue or a gift.
           </p>
           <div className="line-grid">
-            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? 0} step={0.5}
+            <NumField label="Excess %" suffix="%" value={form.excess_pct ?? 0}
               onChange={(v) => set({ excess_pct: v })} />
             <div className="field">
               <label>Paid for</label>
@@ -1026,7 +1188,7 @@ function BuyerModal({ buyer, onClose, onSave, busy }: {
                 <span className="tiny">{form.excess_billable ? 'Invoiced with the order' : 'Shipped free'}</span>
               </label>
             </div>
-            <NumField label="Shortfall tolerance" suffix="%" value={form.shortfall_tolerance_pct ?? 0} step={0.5}
+            <NumField label="Shortfall tolerance" suffix="%" value={form.shortfall_tolerance_pct ?? 0}
               onChange={(v) => set({ shortfall_tolerance_pct: v })}
               help="how short they will accept" />
           </div>
@@ -1043,20 +1205,18 @@ function BuyerModal({ buyer, onClose, onSave, busy }: {
 function VendorsTab({ canEdit }: { canEdit: boolean }) {
   const toast = useToast();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: '', processes: '', contact: '', gst_no: '', notes: '' });
-  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Vendor | 'new' | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['vendors'],
-    queryFn: () => api.get<{ rows: { id: number; name: string; processes: string; contact: string; gst_no: string }[] }>('/api/vendors'),
+    queryFn: () => api.get<{ rows: Vendor[] }>('/api/vendors'),
   });
 
   const save = useMutation({
-    mutationFn: () => api.post('/api/vendors', form),
+    mutationFn: (v: Partial<Vendor>) => v.id ? api.patch(`/api/vendors/${v.id}`, v) : api.post('/api/vendors', v),
     onSuccess: () => {
       toast.ok('Vendor saved');
-      setAdding(false);
-      setForm({ name: '', processes: '', contact: '', gst_no: '', notes: '' });
+      setEditing(null);
       void qc.invalidateQueries({ queryKey: ['vendors'] });
     },
     onError: (e) => toast.error(e),
@@ -1069,14 +1229,14 @@ function VendorsTab({ canEdit }: { canEdit: boolean }) {
       {canEdit && (
         <div className="toolbar">
           <span className="grow" />
-          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+          <button type="button" className="btn btn-primary" onClick={() => setEditing('new')}>
             <Icon.Plus size={16} /> Add a vendor
           </button>
         </div>
       )}
       <div className="table-wrap">
         <table className="data stack">
-          <thead><tr><th>Vendor</th><th>Processes</th><th>Contact</th><th>GST</th></tr></thead>
+          <thead><tr><th>Vendor</th><th>Processes</th><th>Contact</th><th>GST</th><th /></tr></thead>
           <tbody>
             {data!.rows.map((v) => (
               <tr key={v.id}>
@@ -1084,36 +1244,60 @@ function VendorsTab({ canEdit }: { canEdit: boolean }) {
                 <td data-label="Processes">{v.processes || '—'}</td>
                 <td data-label="Contact">{v.contact || '—'}</td>
                 <td data-label="GST" className="mono tiny">{v.gst_no || '—'}</td>
+                <td data-label="">
+                  {canEdit && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(v)}>Edit</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {adding && (
-        <Modal title="Add a vendor" onClose={() => setAdding(false)}
-          footer={
-            <>
-              <button type="button" className="btn" onClick={() => setAdding(false)}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={!form.name || save.isPending}
-                onClick={() => save.mutate()}>
-                {save.isPending && <span className="spinner" />}Save
-              </button>
-            </>
-          }>
-          <div className="col" style={{ gap: 'var(--s-4)' }}>
-            <TextField label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
-            <TextField label="Processes" value={form.processes}
-              onChange={(v) => setForm({ ...form, processes: v })}
-              placeholder="Print, Embroidery" help="comma separated" />
-            <div className="line-grid">
-              <TextField label="Contact" value={form.contact} onChange={(v) => setForm({ ...form, contact: v })} />
-              <TextField label="GST number" value={form.gst_no} onChange={(v) => setForm({ ...form, gst_no: v })} />
-            </div>
-          </div>
-        </Modal>
+      {editing && (
+        <VendorModal vendor={editing === 'new' ? null : editing} busy={save.isPending}
+          onClose={() => setEditing(null)} onSave={(v) => save.mutate(v)} />
       )}
     </>
+  );
+}
+
+function VendorModal({ vendor, onClose, onSave, busy }: {
+  vendor: Vendor | null; onClose: () => void; onSave: (v: Partial<Vendor>) => void; busy: boolean;
+}) {
+  const [form, setForm] = useState<Partial<Vendor>>(vendor ?? {
+    name: '', processes: '', contact: '', gst_no: '', notes: '',
+  });
+  const set = (n: Partial<Vendor>) => setForm((f) => ({ ...f, ...n }));
+
+  return (
+    <Modal
+      title={vendor ? `Edit ${vendor.name}` : 'Add a vendor'}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={busy || !form.name}
+            onClick={() => onSave(form)}>
+            {busy && <span className="spinner" />}Save
+          </button>
+        </>
+      }
+    >
+      <div className="col" style={{ gap: 'var(--s-4)' }}>
+        <TextField label="Name" value={form.name ?? ''} onChange={(v) => set({ name: v })} required
+          disabled={Boolean(vendor)}
+          help={vendor ? 'Job-work entries and cost sheets carry this name as text, so it cannot be changed here.' : undefined} />
+        <TextField label="Processes" value={form.processes ?? ''}
+          onChange={(v) => set({ processes: v })}
+          placeholder="Print, Embroidery" help="comma separated" />
+        <div className="line-grid">
+          <TextField label="Contact" value={form.contact ?? ''} onChange={(v) => set({ contact: v })} />
+          <TextField label="GST number" value={form.gst_no ?? ''} onChange={(v) => set({ gst_no: v })} />
+        </div>
+      </div>
+    </Modal>
   );
 }
 

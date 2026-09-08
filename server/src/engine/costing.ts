@@ -196,19 +196,58 @@ export function computeQuantities(input: Pick<CostSheetInput, 'order_qty' | 'exc
 }
 
 /**
- * Rate per finished kilogram from the build-up. A stage that loses material
- * costs more per surviving kilogram, so its rate is grossed up by its own
- * loss — 10% loss on a ₹90 dyeing charge is ₹100 per good kg, not ₹99.
+ * Rate per finished kilogram from the build-up.
+ *
+ * The components are a route, not a basket: yarn is knitted, the grey is
+ * dyed, the dyed cloth is washed and compacted. Every processor bills on the
+ * weight sent *in*, and every stage that loses material means more weight had
+ * to be sent into all the stages before it. So a component's charge is spread
+ * over the fabric that finally survives it — which is its own output reduced
+ * by every loss still to come, not just its own.
+ *
+ * Concretely, on yarn ₹320 → knitting ₹10 at 1% → dyeing ₹60 at 4% →
+ * bio-wash ₹10 at 5% → compacting ₹10: one finished kilogram needs 1.108 kg
+ * of yarn, so the yarn in it costs ₹354.42, not ₹320. Charging each stage only
+ * its own loss gave ₹413.13/kg where the true figure is ₹451.81/kg — a 9%
+ * understatement, always in the direction that flatters the margin.
+ *
+ * This makes the order of the components meaningful: they must be listed in
+ * the sequence the cloth actually travels.
  */
-export function fabricRatePerKg(line: FabricLineInput): { rate: number; parts: { component: string; rate: number }[] } {
+export interface FabricRatePart {
+  component: string;
+  /** the component's charge, per kilogram of *finished* fabric */
+  rate: number;
+  /** kg entering this stage per kilogram of finished fabric */
+  inputPerFinishedKg: number;
+}
+
+export function fabricRatePerKg(line: FabricLineInput): { rate: number; parts: FabricRatePart[] } {
   if ((line.rate_mode ?? 'buildup') === 'flat') {
-    return { rate: num(line.flat_rate_per_kg), parts: [{ component: 'Flat rate', rate: num(line.flat_rate_per_kg) }] };
+    const flat = num(line.flat_rate_per_kg);
+    return { rate: flat, parts: [{ component: 'Flat rate', rate: flat, inputPerFinishedKg: 1 }] };
   }
-  const parts = (line.components ?? []).map((c) => {
-    const loss = Math.min(Math.max(0, num(c.loss_pct)), 95) / 100;
-    return { component: c.component, rate: r4(num(c.rate_per_kg) / (1 - loss)) };
+  const comps = line.components ?? [];
+  const yields = comps.map((c) => 1 - Math.min(Math.max(0, num(c.loss_pct)), 95) / 100);
+
+  const parts = comps.map((c, i) => {
+    // What is left of a kilogram entering this stage by the time the cloth is
+    // finished. Every stage from here on still takes its cut.
+    let survives = 1;
+    for (let j = i; j < yields.length; j += 1) survives *= yields[j];
+    return {
+      component: c.component,
+      rate: r4(num(c.rate_per_kg) / survives),
+      inputPerFinishedKg: r4(1 / survives),
+    };
   });
   return { rate: r4(parts.reduce((s, p) => s + p.rate, 0)), parts };
+}
+
+/** How much has to enter the first stage for one finished kilogram to leave. */
+export function fabricInputPerFinishedKg(line: FabricLineInput): number {
+  const { parts } = fabricRatePerKg(line);
+  return parts[0]?.inputPerFinishedKg ?? 1;
 }
 
 export function computeCostSheet(input: CostSheetInput): CostResult {

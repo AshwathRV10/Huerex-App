@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +23,45 @@ function int(v: string | undefined, dflt: number): number {
  */
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..', '..');
+
+/**
+ * Settings come from a `.env` file beside the installation, if there is one.
+ *
+ * .env.example has always told the reader to copy it to .env and set DB_PATH
+ * so the database lives somewhere the app folder being replaced cannot touch.
+ * Nothing read that file, so following the instruction did nothing at all —
+ * and silently: the server started, worked, and kept writing the database
+ * inside the installation, where the next upgrade deletes it.
+ *
+ * A real environment variable always wins over the file. Docker Compose, the
+ * CI workflow and the test harness all pass their settings that way, and a
+ * stale .env left in a checkout must never override what the operator set on
+ * the command line.
+ */
+export function loadEnvFile(path: string): void {
+  if (!existsSync(path)) return;
+  for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq < 1) continue;
+    const key = line.slice(0, eq).replace(/^export\s+/, '').trim();
+    if (!key || key in process.env) continue;
+    let value = line.slice(eq + 1).trim();
+    // Quotes let a value keep spaces or a trailing #; unquoted values stop at
+    // the first comment marker, so `PORT=4000  # the LAN port` is still 4000.
+    if ((value.startsWith('"') && value.endsWith('"') && value.length > 1)
+      || (value.startsWith("'") && value.endsWith("'") && value.length > 1)) {
+      value = value.slice(1, -1);
+    } else {
+      const hash = value.indexOf(' #');
+      if (hash >= 0) value = value.slice(0, hash).trim();
+    }
+    process.env[key] = value;
+  }
+}
+
+loadEnvFile(process.env.ENV_FILE ?? `${root}/.env`);
 
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',

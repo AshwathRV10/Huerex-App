@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { NumericInput } from './NumericInput';
 import { Combobox } from './Combobox';
 import { useToast } from '../lib/toast';
 import { today } from '../lib/format';
@@ -83,13 +84,22 @@ export function carriedTemplate(columns: GridColumn[], blank: GridRow, previous?
  * it against the row the app would have created is what tells the two apart;
  * without it a freshly carried row is offered for saving and then rejected
  * for missing the quantity nobody has typed yet.
+ *
+ * A carried column matches the blank default as readily as the carried value,
+ * because the trailing row copied whatever the row above held at the moment it
+ * appeared, and the row above can be edited afterwards. Type a grammage, get a
+ * fresh row carrying an excess of 0, then go back and set the excess to 10:
+ * the template now says 10, the untouched row still says 0, and without this
+ * it stops counting as blank and is saved as a fabric with no name.
  */
 export function isBlankRow(
   row: GridRow, columns: GridColumn[], blank?: GridRow, previous?: GridRow,
 ): boolean {
   if (blank) {
     const template = carriedTemplate(columns, blank, previous);
-    return columns.every((c) => String(row[c.key] ?? '') === String(template[c.key] ?? ''));
+    const same = (a: unknown, b: unknown) => String(a ?? '') === String(b ?? '');
+    return columns.every((c) => same(row[c.key], template[c.key])
+      || (c.carry && same(row[c.key], blank[c.key])));
   }
   return columns.every((c) => {
     const v = row[c.key];
@@ -357,17 +367,23 @@ export function Cell({ col, value, onChange, disabled, autoFocus, id }: {
   disabled?: boolean;
   autoFocus?: boolean;
   /**
-   * Ties a visible label to this control. The grid's own header does that job
-   * on a desk; anywhere the cell sits under a <label> — the phone cards, the
-   * correction dialog — the label needs something to point at, or clicking it
-   * focuses nothing and a screen reader reads the field unnamed.
+   * Ties a visible label to this control. Anywhere the cell sits under a
+   * <label> — the phone cards, the correction dialog — the label needs
+   * something to point at, or clicking it focuses nothing and a screen reader
+   * reads the field unnamed.
    */
   id?: string;
 }) {
+  // On a desk the column header names the cell to the eye, but a <th> does not
+  // name an <input> in another cell to anything else: no screen reader, and no
+  // test that asks for a field by name. Where there is no visible label to
+  // point at, the column's own label does the naming.
+  const named = id ? {} : { 'aria-label': col.label };
   if (col.type === 'combo' && col.list) {
     return (
       <Combobox
         id={id}
+        ariaLabel={named['aria-label']}
         list={col.list}
         value={String(value ?? '')}
         onChange={onChange}
@@ -378,7 +394,7 @@ export function Cell({ col, value, onChange, disabled, autoFocus, id }: {
   }
   if (col.type === 'select') {
     return (
-      <select id={id} className="select" value={String(value ?? '')} disabled={disabled}
+      <select id={id} {...named} className="select" value={String(value ?? '')} disabled={disabled}
         onChange={(e) => onChange(e.target.value)}>
         {(col.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -395,19 +411,21 @@ export function Cell({ col, value, onChange, disabled, autoFocus, id }: {
   }
   if (col.type === 'number') {
     return (
-      <input
+      <NumericInput
         id={id}
-        type="number" inputMode="decimal" className="input input-num"
-        min={col.min ?? 0} step={col.step ?? 1} disabled={disabled} autoFocus={autoFocus}
+        {...named}
+        className="input input-num"
+        min={col.min ?? 0} disabled={disabled} autoFocus={autoFocus}
         placeholder={col.placeholder ?? '0'}
-        value={value === 0 || value === undefined || value === '' ? (value === 0 ? '0' : '') : String(value)}
-        onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+        value={typeof value === 'number' ? value : Number(value ?? 0)}
+        onChange={onChange}
       />
     );
   }
   return (
     <input
       id={id}
+      {...named}
       type={col.type === 'date' ? 'date' : 'text'}
       className="input" disabled={disabled} autoFocus={autoFocus}
       placeholder={col.placeholder}

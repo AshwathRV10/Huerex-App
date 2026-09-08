@@ -100,6 +100,38 @@ interface Draft {
 /* ----------------------------------------------------------------- blanks */
 
 const blankComponent = (): Component => ({ component: '', rate_per_kg: 0, vendor: '', loss_pct: 0, remarks: '' });
+
+/**
+ * The rate per finished kilogram, mirroring fabricRatePerKg on the server.
+ *
+ * The components are a route, not a basket. Every processor bills on the
+ * weight sent in, so each stage's charge is spread over what survives it —
+ * its own loss and every loss still to come. That is why a yarn row with no
+ * loss of its own still costs more than its ₹/kg: a finished kilogram needed
+ * more than a kilogram of yarn to begin with.
+ */
+function buildupRate(components: Component[]): number {
+  const yields = components.map((c) => 1 - Math.min(Math.max(0, c.loss_pct || 0), 95) / 100);
+  return components.reduce((sum, c, i) => {
+    let survives = 1;
+    for (let j = i; j < yields.length; j += 1) survives *= yields[j];
+    return sum + (c.rate_per_kg || 0) / survives;
+  }, 0);
+}
+
+/** Move one step of the route up or down, keeping the rest in order. */
+function moveStep(components: Component[], from: number, delta: number): Component[] {
+  const to = from + delta;
+  if (to < 0 || to >= components.length) return components;
+  const next = [...components];
+  [next[from], next[to]] = [next[to], next[from]];
+  return next;
+}
+
+/** How much has to enter the first stage for one finished kilogram to leave. */
+function inputPerFinishedKg(components: Component[]): number {
+  return components.reduce((k, c) => k / (1 - Math.min(Math.max(0, c.loss_pct || 0), 95) / 100), 1);
+}
 const blankFabric = (): FabricLine => ({
   fabric_type: '', colour: '', part: 'Body', gsm: 0, consumption_g_per_pc: 0, wastage_pct: 8,
   rate_mode: 'buildup', flat_rate_per_kg: 0, applies_qty_pct: 100, supplier: '', remarks: '',
@@ -337,7 +369,7 @@ export function CostSheetPage() {
           <div className="line-grid">
             <NumField label="Order quantity" value={sheet.order_qty} onChange={() => undefined} disabled
               help="from the order" />
-            <NumField label="Excess %" value={draft.excess_pct} step={0.5} disabled={!editable}
+            <NumField label="Excess %" value={draft.excess_pct} disabled={!editable}
               suffix="%" onChange={(v) => patch({ excess_pct: v })}
               help="this buyer's rule" />
             <div className="field">
@@ -350,7 +382,7 @@ export function CostSheetPage() {
                 <span className="tiny">{draft.excess_billable ? 'Yes — invoiced' : 'No — we absorb it'}</span>
               </label>
             </div>
-            <NumField label="Rejection allowance %" value={draft.rejection_pct} step={0.5} disabled={!editable}
+            <NumField label="Rejection allowance %" value={draft.rejection_pct} disabled={!editable}
               suffix="%" onChange={(v) => patch({ rejection_pct: v })}
               help="made but not shipped" />
           </div>
@@ -397,7 +429,7 @@ export function CostSheetPage() {
             <Combobox list="currencies" value={draft.currency} label="Currency"
               disabled={!editable || !can('costing.selling_price.edit')}
               onChange={(v) => patch({ currency: v })} />
-            <NumField label="₹ per unit of currency" value={draft.fx_rate} step={0.01}
+            <NumField label="₹ per unit of currency" value={draft.fx_rate}
               disabled={!editable || !can('costing.selling_price.edit') || draft.currency === 'INR'}
               onChange={(v) => patch({ fx_rate: v })}
               help={draft.currency === 'INR' ? 'rupees, so 1' : 'used to compare with cost'} />
@@ -413,7 +445,7 @@ export function CostSheetPage() {
             <Combobox list="price_basis" value={draft.price_basis} label="Basis"
               disabled={!editable || !can('costing.selling_price.edit')}
               onChange={(v) => patch({ price_basis: v })} />
-            <NumField label="Target margin %" value={draft.target_margin_pct} suffix="%" step={0.5}
+            <NumField label="Target margin %" value={draft.target_margin_pct} suffix="%"
               disabled={!editable} onChange={(v) => patch({ target_margin_pct: v })}
               help="what price would hit it" />
           </div>
@@ -607,9 +639,12 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
     >
       {draft.fabric.length === 0 && <p className="tiny subtle">No fabric on this sheet yet.</p>}
       {draft.fabric.map((line, i) => {
+        // Mirrors fabricRatePerKg in server/src/engine/costing.ts, so the figure
+        // moves as you type instead of waiting for a save. The server stays the
+        // authority; a browser test pins this preview to what it returns.
         const rate = line.rate_mode === 'flat'
           ? line.flat_rate_per_kg
-          : line.components.reduce((s, c) => s + (c.rate_per_kg || 0) / (1 - Math.min(c.loss_pct || 0, 95) / 100), 0);
+          : buildupRate(line.components);
         return (
           <div className="line-card" key={i}>
             <div className="line-grid">
@@ -619,12 +654,12 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                 onChange={(v) => setLine(i, { colour: v })} help="blank = every colour" />
               <Combobox list="fabric_parts" label="Part" value={line.part} disabled={!editable}
                 onChange={(v) => setLine(i, { part: v })} />
-              <NumField label="Consumption" suffix="g/pc" value={line.consumption_g_per_pc} step={1}
+              <NumField label="Consumption" suffix="g/pc" value={line.consumption_g_per_pc}
                 disabled={!editable} onChange={(v) => setLine(i, { consumption_g_per_pc: v })} />
-              <NumField label="Wastage" suffix="%" value={line.wastage_pct} step={0.5}
+              <NumField label="Wastage" suffix="%" value={line.wastage_pct}
                 disabled={!editable} onChange={(v) => setLine(i, { wastage_pct: v })}
                 help="cutting loss on top" />
-              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5}
+              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct}
                 disabled={!editable} onChange={(v) => setLine(i, { applies_qty_pct: v })}
                 help="% of pieces" />
             </div>
@@ -654,14 +689,22 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                 </div>
               ) : (
                 <div className="col" style={{ gap: 6 }}>
+                  <p className="tiny subtle" style={{ margin: 0 }}>
+                    In the order the cloth travels. Each processor bills on the weight sent in, so a
+                    loss here is paid for by everything above it — move a step and the rate changes.
+                  </p>
                   {line.components.map((c, ci) => (
                     <div className="comp-row" key={ci}>
+                      <span className="step" aria-hidden="true"
+                        style={ci === 0 ? { marginTop: 20 } : undefined}>{ci + 1}</span>
                       <Combobox list="fabric_components" label={ci === 0 ? 'Component' : undefined}
+                        ariaLabel={`Component, step ${ci + 1}`}
                         value={c.component} disabled={!editable}
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, component: v } : x)),
                         })} />
-                      <RateField label={ci === 0 ? 'Rate' : undefined} suffix="/kg" disabled={!editable}
+                      <RateField label={ci === 0 ? 'Rate' : undefined}
+                        ariaLabel={`Rate, step ${ci + 1}`} suffix="/kg" disabled={!editable}
                         context={{
                           kind: 'fabric_component', ...memoryCtx,
                           fabric_type: line.fabric_type, colour: line.colour,
@@ -671,11 +714,20 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, rate_per_kg: v } : x)),
                         })} />
-                      <NumField label={ci === 0 ? 'Loss' : undefined} suffix="%" value={c.loss_pct} step={0.5}
+                      <NumField label={ci === 0 ? 'Loss' : undefined}
+                        ariaLabel={`Loss, step ${ci + 1}`} suffix="%" value={c.loss_pct}
                         disabled={!editable}
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, loss_pct: v } : x)),
                         })} />
+                      <span className="move" style={ci === 0 ? { marginTop: 20 } : undefined}>
+                        <button type="button" aria-label={`Move ${c.component || `step ${ci + 1}`} earlier`}
+                          disabled={!editable || ci === 0}
+                          onClick={() => setLine(i, { components: moveStep(line.components, ci, -1) })}>▲</button>
+                        <button type="button" aria-label={`Move ${c.component || `step ${ci + 1}`} later`}
+                          disabled={!editable || ci === line.components.length - 1}
+                          onClick={() => setLine(i, { components: moveStep(line.components, ci, 1) })}>▼</button>
+                      </span>
                       {editable && (
                         <button type="button" className="btn btn-ghost btn-sm btn-icon"
                           aria-label="Remove component" style={{ marginBottom: 2 }}
@@ -690,7 +742,13 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                         <Icon.Plus size={13} /> Add a component
                       </button>
                     )}
-                    <span className="tiny muted">Rate works out at <b>{money(rate)}/kg</b></span>
+                    <span className="tiny muted">
+                      Rate works out at <b>{money(rate)}/kg</b>
+                      {line.components.length > 1 && (
+                        <> · 1 kg finished needs <b>{inputPerFinishedKg(line.components).toFixed(3)} kg</b> of{' '}
+                          {line.components[0].component || 'the first input'}</>
+                      )}
+                    </span>
                   </div>
                 </div>
               )}
@@ -725,16 +783,16 @@ function TrimBlock({ draft, patch, editable, memoryCtx, block }: {
               onChange={(v) => setLine(i, { trim_item: v })} required />
             <Combobox list="colours" label="Colour" value={line.colour} disabled={!editable}
               onChange={(v) => setLine(i, { colour: v })} help="blank = all" />
-            <NumField label="Qty / garment" value={line.qty_per_pc} step={0.25} disabled={!editable}
+            <NumField label="Qty / garment" value={line.qty_per_pc} disabled={!editable}
               onChange={(v) => setLine(i, { qty_per_pc: v })} />
             <Combobox list="trim_uoms" label="Unit" value={line.uom} disabled={!editable}
               onChange={(v) => setLine(i, { uom: v })} />
             <RateField label="Rate" prefix="₹" suffix={`/${line.uom || 'pc'}`} disabled={!editable}
               context={{ kind: 'trim', ...memoryCtx, trim_item: line.trim_item, colour: line.colour, uom: line.uom } as RateContext}
               value={line.rate_per_unit} onChange={(v) => setLine(i, { rate_per_unit: v })} />
-            <NumField label="Wastage" suffix="%" value={line.wastage_pct} step={0.5} disabled={!editable}
+            <NumField label="Wastage" suffix="%" value={line.wastage_pct} disabled={!editable}
               onChange={(v) => setLine(i, { wastage_pct: v })} />
-            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5} disabled={!editable}
+            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} disabled={!editable}
               onChange={(v) => setLine(i, { applies_qty_pct: v })} />
           </div>
           <LineFoot line={block?.lines[i]} editable={editable}
@@ -774,11 +832,11 @@ function JobWorkBlock({ draft, patch, editable, memoryCtx, block }: {
             <RateField label="Rate" suffix="/pc" disabled={!editable}
               context={{ kind: 'jobwork', ...memoryCtx, process: line.process, vendor: line.vendor, colour: line.colour, uom: 'pc' } as RateContext}
               value={line.rate_per_pc} onChange={(v) => setLine(i, { rate_per_pc: v })} />
-            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5} disabled={!editable}
+            <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} disabled={!editable}
               onChange={(v) => setLine(i, { applies_qty_pct: v })} help="e.g. front panel only" />
-            <NumField label="Vendor loss" suffix="%" value={line.vendor_loss_pct} step={0.5} disabled={!editable}
+            <NumField label="Vendor loss" suffix="%" value={line.vendor_loss_pct} disabled={!editable}
               onChange={(v) => setLine(i, { vendor_loss_pct: v })} help="paid for, never returned" />
-            <NumField label="Freight" prefix="₹" value={line.freight_per_order} step={100} disabled={!editable}
+            <NumField label="Freight" prefix="₹" value={line.freight_per_order} disabled={!editable}
               onChange={(v) => setLine(i, { freight_per_order: v })} help="for the whole order" />
           </div>
           <LineFoot line={block?.lines[i]} editable={editable}
@@ -826,15 +884,15 @@ function CmtBlock({ draft, patch, editable, memoryCtx, block }: {
               value={line.rate} onChange={(v) => setLine(i, { rate: v })} />
             {line.basis === 'per_sam_min' && (
               <>
-                <NumField label="SAM" suffix="min" value={line.sam_min} step={0.5} disabled={!editable}
+                <NumField label="SAM" suffix="min" value={line.sam_min} disabled={!editable}
                   onChange={(v) => setLine(i, { sam_min: v })} />
-                <NumField label="Efficiency" suffix="%" value={line.efficiency_pct} step={5} disabled={!editable}
+                <NumField label="Efficiency" suffix="%" value={line.efficiency_pct} disabled={!editable}
                   onChange={(v) => setLine(i, { efficiency_pct: v })}
                   help="65% means each SAM minute costs 1.54" />
               </>
             )}
             {line.basis !== 'per_order' && line.basis !== 'pct_of_cost' && (
-              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} step={5} disabled={!editable}
+              <NumField label="Applies to" suffix="%" value={line.applies_qty_pct} disabled={!editable}
                 onChange={(v) => setLine(i, { applies_qty_pct: v })} />
             )}
           </div>
@@ -896,14 +954,18 @@ function OverheadBlock({ draft, patch, editable, memoryCtx, block }: {
 /* ------------------------------------------------------------- the preview */
 
 function ProposalPreview({ proposal }: {
-  proposal: Draft & { selling_price_because?: string; selling_price_placeholder?: boolean };
+  proposal: Draft & {
+    selling_price_because?: string; selling_price_placeholder?: boolean;
+    fabric_source?: 'plan' | 'cutting' | 'memory';
+  };
 }) {
   type Item = { text: string; placeholder: boolean };
   const rows: [string, Item[]][] = [
-    ['Fabric', proposal.fabric.map((f) => ({
-      text: `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''} at ${f.consumption_g_per_pc} g/pc`,
-      placeholder: (f.components ?? []).some((c) => c._placeholder),
-    }))],
+    [proposal.fabric_source === 'plan' ? 'Fabric — from the order\u2019s plan' : 'Fabric',
+      proposal.fabric.map((f) => ({
+        text: `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''}${f.part && f.part !== 'Body' ? ` (${f.part})` : ''} at ${f.consumption_g_per_pc} g/pc`,
+        placeholder: (f.components ?? []).some((c) => c._placeholder),
+      }))],
     ['Job work', proposal.jobwork.map((j) => ({
       text: `${j.process}${j.vendor ? ` at ${j.vendor}` : ''}${j.rate_per_pc ? ` — ₹${j.rate_per_pc}/pc` : ''}`,
       placeholder: Boolean(j._placeholder),

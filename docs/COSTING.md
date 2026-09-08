@@ -46,6 +46,54 @@ how many garments the buyer receives.
 
 ---
 
+## The fabric plan — decided with the order
+
+Before any cloth exists, somebody has to say how much yarn to book. That sum
+lives on the order, one line per cloth, on its **Fabric plan** tab:
+
+```
+                                    pieces × g/pc = cloth   + excess = yarn
+Single Jersey · Navy   · Body    88 g/pc    88.0 kg    10%     96.8 kg
+1×1 Rib       · Navy   · Collar  10 g/pc    10.0 kg    10%     11.0 kg
+                                 Total      98.0 kg            107.8 kg
+```
+
+The grammage is finished cloth per garment, worked out from the GSM and the
+body spec. The excess is **process loss** — what disappears between the yarn
+going out and the cloth coming back, in knitting, dyeing and washing. It is
+not cutting loss, which happens to cloth that has already arrived and belongs
+on the cost sheet. Putting the same loss in both places prices the order about
+ten per cent over.
+
+Each fabric carries its own excess, because a dark shade loses more in dyeing
+than a pastel does.
+
+The pieces are the order **plus the excess that ships with it**, since those
+garments are cut from the same rolls.
+
+### It feeds the cost sheet
+
+A sheet proposed for an order that has a plan takes its fabric lines from it —
+the cloth, the shade, the part and the grammage — instead of guessing from
+whatever was last cut. The draft says so, so nobody mistakes a figure a person
+chose for one the app invented.
+
+### And it gets measured
+
+As cloth is booked into the fabric store against the order, what arrived is
+compared with what was taken:
+
+```
+Single Jersey  yarn taken 96.8 kg   cloth in 88.2 kg   loss 8.88%   planned 10%
+```
+
+The comparison is drawn at fabric and shade rather than per line, because the
+store books a receipt against a cloth and a colour and nothing finer — a body
+and a collar in the same shade arrive on the same roll.
+
+After a few orders the excess stops being a rule of thumb: navy on this jersey
+runs at twelve per cent, whatever anybody says it should.
+
 ## Fabric — a build-up, not a rate
 
 The brief that started this was specific: *dyeing rates vary colour to colour,
@@ -61,9 +109,44 @@ Compacting    ₹18 /kg
                   ₹419 /kg
 ```
 
-Each component can carry its own **process loss**. A stage that loses 10% of
-what goes into it costs more per surviving kilogram, so its rate is grossed
-up: ₹90 of dyeing at 10% loss is ₹100 per good kilogram, not ₹99.
+### The components are a route, not a basket
+
+List them in the order the cloth actually travels — yarn is knitted, the grey
+is dyed, the dyed cloth is washed and compacted. The order matters, and the
+screen numbers the steps and lets you move them, because the arithmetic
+depends on it.
+
+Each component carries its own **process loss**: the weight that physically
+disappears at that stage. Every processor bills on the weight sent *in*, so a
+loss anywhere means more weight had to be bought and put through every stage
+before it. A component's charge is therefore spread over the cloth that
+survives to the end — its own loss and every loss still to come.
+
+The consequence catches people out: **a stage with no loss of its own still
+costs more than its ₹/kg.** Yarn does not shrink in the godown, but a finished
+kilogram needed more than a kilogram of yarn, so that is what the yarn in it
+costs.
+
+```
+Yarn        ₹320 /kg   0% loss    →  ₹354.42   1 kg finished needs 1.108 kg yarn
+Knitting     ₹10 /kg   1% loss    →   ₹11.08
+Dyeing       ₹60 /kg   4% loss    →   ₹65.79
+Bio-wash     ₹10 /kg   5% loss    →   ₹10.53
+Compacting   ₹10 /kg   0% loss    →   ₹10.00
+                                      -------
+                                     ₹451.81 /kg
+```
+
+Check it the long way: buy 96.8 kg of yarn at ₹320, pay knitting on 96.8 kg,
+dyeing on the 95.83 kg that survives it, bio-wash on 92.00, compacting on
+87.40 — ₹39,488 for 87.40 kg of cloth, which is ₹451.81/kg. The build-up has
+to agree with the cheque book, and it does.
+
+**Do not also put the loss in the wastage field.** A merchant who plans "88 kg
+of fabric, take 10% more yarn" is describing the same loss the components
+already carry. `Wastage %` on the line is cutting loss — cloth spoiled on the
+table — and nothing else. Counting the process loss in both places prices the
+order about 10% over.
 
 The line cost is then:
 

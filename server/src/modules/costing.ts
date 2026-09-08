@@ -356,13 +356,24 @@ export function proposeSheet(order: OrderRow) {
     'SELECT DISTINCT colour FROM order_matrix WHERE order_id = ? ORDER BY colour', [order.id],
   ).map((r) => r.colour);
 
+  // The fabric plan, if somebody made one when the order was taken. It is the
+  // best seed there is: a person decided each cloth, its shade, which part of
+  // the garment it is, and how many grams of it a piece takes — none of which
+  // has to be guessed at or averaged out of what has been cut so far.
+  const planned = all<{ fabric_type: string; colour: string; part: string; g: number }>(
+    `SELECT fabric_type, colour, part, grammage_g_per_pc AS g
+       FROM order_fabrics WHERE order_id = ? ORDER BY seq, id`, [order.id],
+  );
+
   const usedFabrics = all<{ fabric_type: string; colour: string; g: number }>(
     `SELECT fabric_type, colour, AVG(COALESCE(pc_weight_g, fabric_gsm * area_per_pc_sqm, 0)) AS g
        FROM cutting WHERE order_id = ? AND fabric_type <> '' GROUP BY fabric_type, colour`,
     [order.id],
   );
 
-  const fabricSeeds = usedFabrics.length
+  const fabricSeeds = planned.length
+    ? planned.map((f) => ({ fabric_type: f.fabric_type, colour: f.colour, part: f.part, g: f.g }))
+    : usedFabrics.length
     ? usedFabrics.map((f) => ({ fabric_type: f.fabric_type, colour: f.colour, g: f.g }))
     : (() => {
       const guess = bestRate({ kind: 'consumption', ...ctx, uom: 'g' } as RateContext);
@@ -385,7 +396,7 @@ export function proposeSheet(order: OrderRow) {
   const fabric = fabricSeeds.map((f) => ({
     fabric_type: f.fabric_type,
     colour: f.colour,
-    part: 'Body',
+    part: ('part' in f && f.part) || 'Body',
     gsm: 0,
     consumption_g_per_pc: Math.round(f.g || 0),
     wastage_pct: 8,
@@ -484,6 +495,9 @@ export function proposeSheet(order: OrderRow) {
     selling_price_per_pc: priceSug?.rate ?? 0,
     selling_price_because: priceSug?.because ?? '',
     selling_price_placeholder: priceSug?.placeholder ?? false,
+    // Where the fabric lines came from, so the draft can say so rather than
+    // presenting a grammage somebody chose as though the app invented it.
+    fabric_source: planned.length ? 'plan' : usedFabrics.length ? 'cutting' : 'memory',
     fabric, trims, jobwork, cmt, overheads,
   };
 }

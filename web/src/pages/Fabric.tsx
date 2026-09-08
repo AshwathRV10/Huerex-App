@@ -399,7 +399,7 @@ function ReweighModal({ row, onClose }: { row: ConsumptionRow; onClose: () => vo
         </p>
         <div className="line-grid">
           <NumField label="Issued" suffix="kg" value={row.net_issued_kg} onChange={() => undefined} disabled />
-          <NumField label="Really consumed" suffix="kg" value={value} step={0.1} onChange={setValue} />
+          <NumField label="Really consumed" suffix="kg" value={value} onChange={setValue} />
           <DateField label="Weighed on" value={when} onChange={setWhen} />
         </div>
         <div className={`banner ${waste / (row.net_issued_kg || 1) > 0.12 ? 'banner-danger' : 'banner-ok'}`}>
