@@ -34,6 +34,13 @@ interface Props {
   value: number;
   onChange: (v: number) => void;
   label?: string;
+  /**
+   * Names the field where no visible label is drawn — a build-up row after the
+   * first, whose column heading sits several rows above it. Without this the
+   * control reaches a screen reader unnamed. It repeats the visible wording so
+   * voice control still matches, per WCAG 2.5.3.
+   */
+  ariaLabel?: string;
   prefix?: string;
   suffix?: string;
   disabled?: boolean;
@@ -43,7 +50,7 @@ interface Props {
 }
 
 export function RateField({
-  context, value, onChange, label, prefix = '₹', suffix,
+  context, value, onChange, label, ariaLabel, prefix = '₹', suffix,
   disabled, always = false, className,
 }: Props) {
   const id = useId();
@@ -77,6 +84,7 @@ export function RateField({
         {prefix && <span className="prefix">{prefix}</span>}
         <NumericInput
           id={id}
+          aria-label={ariaLabel}
           className="input input-num"
           min={0}
           disabled={disabled}
@@ -115,9 +123,9 @@ export function RateField({
 
 /** Plain number field, matching RateField's shape so rows line up. */
 export function NumField({
-  label, value, onChange, suffix, prefix, min = 0, max, disabled, help, className, placeholder,
+  label, ariaLabel, value, onChange, suffix, prefix, min = 0, max, disabled, help, className, placeholder,
 }: {
-  label?: string; value: number; onChange: (v: number) => void;
+  label?: string; ariaLabel?: string; value: number; onChange: (v: number) => void;
   suffix?: string; prefix?: string; min?: number; max?: number;
   disabled?: boolean; help?: string; className?: string; placeholder?: string;
 }) {
@@ -129,6 +137,7 @@ export function NumField({
         {prefix && <span className="prefix">{prefix}</span>}
         <NumericInput
           id={id}
+          aria-label={ariaLabel}
           className="input input-num"
           min={min} max={max}
           disabled={disabled}

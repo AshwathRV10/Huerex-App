@@ -61,9 +61,44 @@ Compacting    ₹18 /kg
                   ₹419 /kg
 ```
 
-Each component can carry its own **process loss**. A stage that loses 10% of
-what goes into it costs more per surviving kilogram, so its rate is grossed
-up: ₹90 of dyeing at 10% loss is ₹100 per good kilogram, not ₹99.
+### The components are a route, not a basket
+
+List them in the order the cloth actually travels — yarn is knitted, the grey
+is dyed, the dyed cloth is washed and compacted. The order matters, and the
+screen numbers the steps and lets you move them, because the arithmetic
+depends on it.
+
+Each component carries its own **process loss**: the weight that physically
+disappears at that stage. Every processor bills on the weight sent *in*, so a
+loss anywhere means more weight had to be bought and put through every stage
+before it. A component's charge is therefore spread over the cloth that
+survives to the end — its own loss and every loss still to come.
+
+The consequence catches people out: **a stage with no loss of its own still
+costs more than its ₹/kg.** Yarn does not shrink in the godown, but a finished
+kilogram needed more than a kilogram of yarn, so that is what the yarn in it
+costs.
+
+```
+Yarn        ₹320 /kg   0% loss    →  ₹354.42   1 kg finished needs 1.108 kg yarn
+Knitting     ₹10 /kg   1% loss    →   ₹11.08
+Dyeing       ₹60 /kg   4% loss    →   ₹65.79
+Bio-wash     ₹10 /kg   5% loss    →   ₹10.53
+Compacting   ₹10 /kg   0% loss    →   ₹10.00
+                                      -------
+                                     ₹451.81 /kg
+```
+
+Check it the long way: buy 96.8 kg of yarn at ₹320, pay knitting on 96.8 kg,
+dyeing on the 95.83 kg that survives it, bio-wash on 92.00, compacting on
+87.40 — ₹39,488 for 87.40 kg of cloth, which is ₹451.81/kg. The build-up has
+to agree with the cheque book, and it does.
+
+**Do not also put the loss in the wastage field.** A merchant who plans "88 kg
+of fabric, take 10% more yarn" is describing the same loss the components
+already carry. `Wastage %` on the line is cutting loss — cloth spoiled on the
+table — and nothing else. Counting the process loss in both places prices the
+order about 10% over.
 
 The line cost is then:
 

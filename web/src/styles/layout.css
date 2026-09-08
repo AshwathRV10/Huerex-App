@@ -194,12 +194,37 @@
   padding-top: var(--s-2); border-top: 1px dashed var(--line); font-size: var(--text-sm);
 }
 
+/* A step in the route the cloth travels, so it carries its number and the
+   handles that move it up and down the sequence. */
 .comp-row {
   display: grid; gap: var(--s-2);
-  grid-template-columns: minmax(120px, 1.4fr) 108px 88px 34px;
+  grid-template-columns: 26px minmax(120px, 1.4fr) 108px 88px 46px 34px;
   align-items: end;
 }
-@media (max-width: 640px) { .comp-row { grid-template-columns: 1fr 1fr; } }
+.comp-row .step {
+  display: flex; align-items: center; justify-content: center;
+  height: 34px; margin-bottom: 2px;
+  font-size: var(--text-xs); font-variant-numeric: tabular-nums;
+  color: var(--text-subtle); background: var(--bg-sunken);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.comp-row .move { display: flex; flex-direction: column; margin-bottom: 2px; }
+.comp-row .move button {
+  height: 17px; padding: 0; line-height: 1; font-size: 9px;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--text-subtle); cursor: pointer;
+}
+.comp-row .move button:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.comp-row .move button:last-child { border-radius: 0 0 var(--radius-sm) var(--radius-sm); border-top: 0; }
+.comp-row .move button:disabled { opacity: 0.35; cursor: default; }
+.comp-row .move button:not(:disabled):hover { color: var(--text); background: var(--bg-sunken); }
+@media (max-width: 640px) {
+  .comp-row { grid-template-columns: 26px 1fr 1fr; }
+  .comp-row .move { flex-direction: row; }
+  .comp-row .move button { width: 50%; height: 34px; font-size: 11px; }
+  .comp-row .move button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+  .comp-row .move button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-top: 1px solid var(--line); border-left: 0; }
+}
 
 /* ------------------------------------------------------------ bulk entry */
 .bulk-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }

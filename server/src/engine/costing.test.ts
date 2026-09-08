@@ -41,7 +41,7 @@ test('excess and rejection compound in the right order', () => {
   assert.equal(q.productionQty, Math.ceil(1050 / 0.96));
 });
 
-test('a fabric build-up grosses each stage up by its own loss', () => {
+test('a loss late in the route is carried by everything bought before it', () => {
   const { rate } = fabricRatePerKg({
     fabric_type: 'Single Jersey',
     consumption_g_per_pc: 200,
@@ -51,8 +51,10 @@ test('a fabric build-up grosses each stage up by its own loss', () => {
       { component: 'Dyeing', rate_per_kg: 90, loss_pct: 10 },
     ],
   });
-  // 250 + 40 + 90/0.9 = 390
-  assert.equal(rate, 390);
+  // Dyeing throws away a tenth of what it is given, so a finished kilogram
+  // needed 1/0.9 kg of yarn bought and knitted to begin with. Yarn 250/0.9 =
+  // 277.78, knitting 40/0.9 = 44.44, dyeing 90/0.9 = 100.
+  assert.equal(rate, 422.2222);
 });
 
 test('dyeing rate changes with colour without touching the rest of the sheet', () => {
@@ -234,4 +236,94 @@ test('an empty sheet is zero everywhere rather than NaN', () => {
   assert.equal(result.costPerPcShipped, 0);
   assert.equal(result.marginPct, 0);
   assert.ok(result.warnings.some((w) => w.includes('Order quantity is zero')));
+});
+
+/* ----------------------------------------------- the fabric rate build-up */
+
+/**
+ * The build-up is a route, not a basket. Every processor bills on the weight
+ * sent in, so a loss at any stage means more weight had to be bought and put
+ * through every stage before it. These figures are a real order from the
+ * floor, checked against the merchandiser's own notebook arithmetic.
+ */
+const jersey = {
+  fabric_type: 'Single Jersey', colour: 'Bachelor Button', part: 'Body',
+  consumption_g_per_pc: 88, wastage_pct: 0, applies_qty_pct: 100,
+  rate_mode: 'buildup' as const,
+  components: [
+    { component: 'Yarn', rate_per_kg: 320, loss_pct: 0 },
+    { component: 'Knitting', rate_per_kg: 10, loss_pct: 1 },
+    { component: 'Dyeing', rate_per_kg: 60, loss_pct: 4 },
+    { component: 'Bio-wash', rate_per_kg: 10, loss_pct: 5 },
+    { component: 'Compacting', rate_per_kg: 10, loss_pct: 0 },
+  ],
+};
+
+test('a stage with no loss of its own still costs more, because later stages lose', () => {
+  const { parts } = fabricRatePerKg(jersey);
+  const yarn = parts.find((p) => p.component === 'Yarn')!;
+
+  // Yarn itself loses nothing — it is bought and knitted. But 1 kg of finished
+  // cloth needs 1.1076 kg of it, so that is what a finished kilogram costs.
+  assert.equal(yarn.inputPerFinishedKg, 1.1076);
+  assert.equal(yarn.rate, 354.4214);
+});
+
+test('each stage is grossed up by the losses still to come, not just its own', () => {
+  const { parts, rate } = fabricRatePerKg(jersey);
+  const by = Object.fromEntries(parts.map((p) => [p.component, p.rate]));
+
+  assert.equal(by.Knitting, 11.0757, 'knitting: 1%, 4%, 5% still ahead of it');
+  assert.equal(by.Dyeing, 65.7895, 'dyeing: its own 4% plus the 5% after it');
+  assert.equal(by['Bio-wash'], 10.5263, 'bio-wash: only its own 5% left');
+  assert.equal(by.Compacting, 10, 'the last stage loses nothing after it');
+  assert.equal(rate, 451.8129);
+});
+
+test('the last stage is unaffected, so a single-component build-up is its own rate', () => {
+  const { rate } = fabricRatePerKg({
+    ...jersey, components: [{ component: 'Yarn', rate_per_kg: 320, loss_pct: 0 }],
+  });
+  assert.equal(rate, 320);
+});
+
+test('the rate matches paying each processor on the weight actually sent in', () => {
+  // The merchandiser's arithmetic, done the long way: buy the yarn, pay every
+  // stage on what it receives, and see what a kilogram of the cloth that comes
+  // out the far end cost. The rate has to agree with this or it is wrong.
+  const yarnKg = 96.8;
+  let weight = yarnKg;
+  let cash = yarnKg * 320;
+  for (const c of jersey.components.slice(1)) {
+    cash += weight * c.rate_per_kg;
+    weight *= 1 - c.loss_pct / 100;
+  }
+
+  const { rate } = fabricRatePerKg(jersey);
+  assert.ok(Math.abs(cash / weight - rate) < 0.001,
+    `paying stage by stage gives ₹${(cash / weight).toFixed(4)}/kg, the build-up says ₹${rate}`);
+});
+
+test('the order of the components decides the answer', () => {
+  const swapped = {
+    ...jersey,
+    components: [jersey.components[0], jersey.components[2], jersey.components[1],
+      jersey.components[3], jersey.components[4]],
+  };
+  assert.notEqual(fabricRatePerKg(swapped).rate, fabricRatePerKg(jersey).rate,
+    'dyeing before knitting is a different route and must cost differently');
+});
+
+test('a flat rate ignores the build-up entirely', () => {
+  const { rate, parts } = fabricRatePerKg({ ...jersey, rate_mode: 'flat', flat_rate_per_kg: 400 });
+  assert.equal(rate, 400);
+  assert.equal(parts[0].inputPerFinishedKg, 1);
+});
+
+test('the sheet prices the fabric at the compounded rate', () => {
+  const r = computeCostSheet({ ...base, order_qty: 1000, fabric: [jersey] });
+  const line = r.blocks.find((b) => b.key === 'fabric')!.lines[0];
+  assert.equal(line.qty, 88, '1000 pieces at 88 g is 88 kg of finished cloth');
+  assert.equal(line.rate, 451.81);
+  assert.equal(line.total, 39759.54);
 });

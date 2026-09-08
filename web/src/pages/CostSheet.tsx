@@ -100,6 +100,38 @@ interface Draft {
 /* ----------------------------------------------------------------- blanks */
 
 const blankComponent = (): Component => ({ component: '', rate_per_kg: 0, vendor: '', loss_pct: 0, remarks: '' });
+
+/**
+ * The rate per finished kilogram, mirroring fabricRatePerKg on the server.
+ *
+ * The components are a route, not a basket. Every processor bills on the
+ * weight sent in, so each stage's charge is spread over what survives it —
+ * its own loss and every loss still to come. That is why a yarn row with no
+ * loss of its own still costs more than its ₹/kg: a finished kilogram needed
+ * more than a kilogram of yarn to begin with.
+ */
+function buildupRate(components: Component[]): number {
+  const yields = components.map((c) => 1 - Math.min(Math.max(0, c.loss_pct || 0), 95) / 100);
+  return components.reduce((sum, c, i) => {
+    let survives = 1;
+    for (let j = i; j < yields.length; j += 1) survives *= yields[j];
+    return sum + (c.rate_per_kg || 0) / survives;
+  }, 0);
+}
+
+/** Move one step of the route up or down, keeping the rest in order. */
+function moveStep(components: Component[], from: number, delta: number): Component[] {
+  const to = from + delta;
+  if (to < 0 || to >= components.length) return components;
+  const next = [...components];
+  [next[from], next[to]] = [next[to], next[from]];
+  return next;
+}
+
+/** How much has to enter the first stage for one finished kilogram to leave. */
+function inputPerFinishedKg(components: Component[]): number {
+  return components.reduce((k, c) => k / (1 - Math.min(Math.max(0, c.loss_pct || 0), 95) / 100), 1);
+}
 const blankFabric = (): FabricLine => ({
   fabric_type: '', colour: '', part: 'Body', gsm: 0, consumption_g_per_pc: 0, wastage_pct: 8,
   rate_mode: 'buildup', flat_rate_per_kg: 0, applies_qty_pct: 100, supplier: '', remarks: '',
@@ -607,9 +639,12 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
     >
       {draft.fabric.length === 0 && <p className="tiny subtle">No fabric on this sheet yet.</p>}
       {draft.fabric.map((line, i) => {
+        // Mirrors fabricRatePerKg in server/src/engine/costing.ts, so the figure
+        // moves as you type instead of waiting for a save. The server stays the
+        // authority; a browser test pins this preview to what it returns.
         const rate = line.rate_mode === 'flat'
           ? line.flat_rate_per_kg
-          : line.components.reduce((s, c) => s + (c.rate_per_kg || 0) / (1 - Math.min(c.loss_pct || 0, 95) / 100), 0);
+          : buildupRate(line.components);
         return (
           <div className="line-card" key={i}>
             <div className="line-grid">
@@ -654,14 +689,22 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                 </div>
               ) : (
                 <div className="col" style={{ gap: 6 }}>
+                  <p className="tiny subtle" style={{ margin: 0 }}>
+                    In the order the cloth travels. Each processor bills on the weight sent in, so a
+                    loss here is paid for by everything above it — move a step and the rate changes.
+                  </p>
                   {line.components.map((c, ci) => (
                     <div className="comp-row" key={ci}>
+                      <span className="step" aria-hidden="true"
+                        style={ci === 0 ? { marginTop: 20 } : undefined}>{ci + 1}</span>
                       <Combobox list="fabric_components" label={ci === 0 ? 'Component' : undefined}
+                        ariaLabel={`Component, step ${ci + 1}`}
                         value={c.component} disabled={!editable}
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, component: v } : x)),
                         })} />
-                      <RateField label={ci === 0 ? 'Rate' : undefined} suffix="/kg" disabled={!editable}
+                      <RateField label={ci === 0 ? 'Rate' : undefined}
+                        ariaLabel={`Rate, step ${ci + 1}`} suffix="/kg" disabled={!editable}
                         context={{
                           kind: 'fabric_component', ...memoryCtx,
                           fabric_type: line.fabric_type, colour: line.colour,
@@ -671,11 +714,20 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, rate_per_kg: v } : x)),
                         })} />
-                      <NumField label={ci === 0 ? 'Loss' : undefined} suffix="%" value={c.loss_pct}
+                      <NumField label={ci === 0 ? 'Loss' : undefined}
+                        ariaLabel={`Loss, step ${ci + 1}`} suffix="%" value={c.loss_pct}
                         disabled={!editable}
                         onChange={(v) => setLine(i, {
                           components: line.components.map((x, k) => (k === ci ? { ...x, loss_pct: v } : x)),
                         })} />
+                      <span className="move" style={ci === 0 ? { marginTop: 20 } : undefined}>
+                        <button type="button" aria-label={`Move ${c.component || `step ${ci + 1}`} earlier`}
+                          disabled={!editable || ci === 0}
+                          onClick={() => setLine(i, { components: moveStep(line.components, ci, -1) })}>▲</button>
+                        <button type="button" aria-label={`Move ${c.component || `step ${ci + 1}`} later`}
+                          disabled={!editable || ci === line.components.length - 1}
+                          onClick={() => setLine(i, { components: moveStep(line.components, ci, 1) })}>▼</button>
+                      </span>
                       {editable && (
                         <button type="button" className="btn btn-ghost btn-sm btn-icon"
                           aria-label="Remove component" style={{ marginBottom: 2 }}
@@ -690,7 +742,13 @@ function FabricBlock({ draft, patch, editable, memoryCtx, block }: {
                         <Icon.Plus size={13} /> Add a component
                       </button>
                     )}
-                    <span className="tiny muted">Rate works out at <b>{money(rate)}/kg</b></span>
+                    <span className="tiny muted">
+                      Rate works out at <b>{money(rate)}/kg</b>
+                      {line.components.length > 1 && (
+                        <> · 1 kg finished needs <b>{inputPerFinishedKg(line.components).toFixed(3)} kg</b> of{' '}
+                          {line.components[0].component || 'the first input'}</>
+                      )}
+                    </span>
                   </div>
                 </div>
               )}
