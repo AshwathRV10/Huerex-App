@@ -88,7 +88,11 @@ export function touchMasters(
   for (const [column, listCode] of Object.entries(learns)) learnValue(listCode, body[column], userId);
 }
 
-export interface SearchResult { value: string; use_count: number; is_new?: boolean; meta?: Record<string, unknown> }
+export interface SearchResult {
+  /** absent on the "add this" row a combobox offers, which has no row yet */
+  id?: number;
+  value: string; use_count: number; is_new?: boolean; meta?: Record<string, unknown>;
+}
 
 export function searchList(listCode: string, q: string, limit = 30): SearchResult[] {
   assertList(listCode);
@@ -98,7 +102,7 @@ export function searchList(listCode: string, q: string, limit = 30): SearchResul
       `SELECT * FROM master_values WHERE list_code = ? AND is_active = 1
         ORDER BY use_count DESC, sort_order, value COLLATE NOCASE LIMIT ?`,
       [listCode, limit],
-    ).map((r) => ({ value: r.value, use_count: r.use_count, meta: JSON.parse(r.meta_json || '{}') }));
+    ).map((r) => ({ id: r.id, value: r.value, use_count: r.use_count, meta: JSON.parse(r.meta_json || '{}') }));
   }
   // Prefix matches first, then anything containing the term — the ordering an
   // operator expects when they type three letters and reach for Enter.
@@ -108,7 +112,7 @@ export function searchList(listCode: string, q: string, limit = 30): SearchResul
       WHERE list_code = ? AND is_active = 1 AND value LIKE ?
       ORDER BY pri, use_count DESC, length(value), value COLLATE NOCASE LIMIT ?`,
     [`${term}%`, listCode, `%${term}%`, limit],
-  ).map((r) => ({ value: r.value, use_count: r.use_count, meta: JSON.parse(r.meta_json || '{}') }));
+  ).map((r) => ({ id: r.id, value: r.value, use_count: r.use_count, meta: JSON.parse(r.meta_json || '{}') }));
 }
 
 const CreateValue = z.object({

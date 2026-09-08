@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { all, one, run, scalar, tx } from '../db/index.js';
 import { audit } from '../audit/index.js';
-import { assertPermission } from '../rbac/guard.js';
+import { assertPermission, can } from '../rbac/guard.js';
+import { MODULE_BY_KEY } from '../rbac/permissions.js';
 import { redactMany, type RedactionSpec } from '../rbac/fieldPolicy.js';
 import { HttpError, parse, sendCsv } from '../lib/http.js';
 import { touchMasters } from './masters.js';
@@ -35,6 +36,16 @@ export interface CrudConfig<S extends z.ZodTypeAny> {
   afterWrite?: (row: Record<string, unknown>, action: 'create' | 'update' | 'delete', req: FastifyRequest) => void;
   /** cross-field validation that needs the database */
   validate?: (row: Record<string, unknown>, id: number | null) => void;
+  /**
+   * A check that needs to know who is asking, not just what they wrote.
+   *
+   * Some columns carry an action rather than a fact — approving a waiver,
+   * deciding a buyer approval — and the module's own create and edit
+   * permissions are far too broad for them. `before` is the row as it stands,
+   * absent on a create, so the guard can tell a decision being made from one
+   * being carried forward untouched.
+   */
+  guard?: (req: FastifyRequest, row: Record<string, unknown>, before?: Record<string, unknown>) => void;
   /** human label for one row, used in the audit summary */
   describe?: (row: Record<string, unknown>) => string;
   /** joins order_id -> orders for convenience columns */
@@ -59,6 +70,37 @@ export function normaliseOrder(body: Record<string, unknown>): Record<string, un
 
 export function registerCrud<S extends z.ZodTypeAny>(app: FastifyInstance, cfg: CrudConfig<S>): void {
   const base = `/api/${cfg.key}`;
+
+  /**
+   * Fields nobody may write without holding the field's own edit permission.
+   *
+   * Read the catalogue rather than repeating it: a module that declares a
+   * sensitive field with an `edit` action means exactly this, and deriving the
+   * list here means the next such field is protected the day it is declared.
+   *
+   * Redaction alone was never enough. A store keeper is refused sight of the
+   * fabric rate — it is deleted from every response — and could still POST one
+   * and have it stick, which put a number nobody in that role may see into the
+   * costing engine and the rate library. Hiding a value on the way out is not
+   * the same as refusing it on the way in.
+   */
+  const guarded = (MODULE_BY_KEY.get(cfg.key)?.sensitiveFields ?? [])
+    .filter((f) => f.actions.includes('edit'))
+    .map((f) => f.key);
+
+  /**
+   * Drop guarded fields the caller may not set, before anything reads them.
+   * On a create the schema default stands in; on an update the row's existing
+   * value survives, because the body is merged over what is already there.
+   */
+  function withoutGuarded(req: FastifyRequest, body: unknown): unknown {
+    if (guarded.length === 0 || typeof body !== 'object' || body === null) return body;
+    const out = { ...(body as Record<string, unknown>) };
+    for (const field of guarded) {
+      if (field in out && !can(req, `${cfg.key}.${field}.edit`)) delete out[field];
+    }
+    return out;
+  }
   const cols = cfg.columns;
   const orderBy = cfg.orderBy ?? 'id DESC';
   const selectList = cfg.withOrder
@@ -109,6 +151,7 @@ export function registerCrud<S extends z.ZodTypeAny>(app: FastifyInstance, cfg: 
   const createOne = (req: FastifyRequest, raw: unknown): Record<string, unknown> => {
     const body = parse(cfg.schema, normaliseOrder(raw as Record<string, unknown>)) as Record<string, unknown>;
     cfg.validate?.(body, null);
+    cfg.guard?.(req, body);
     const present = cols.filter((c) => body[c] !== undefined);
     const info = run(
       `INSERT INTO ${cfg.table} (${present.join(',')}${'created_by' in body ? '' : ', created_by'})
@@ -123,7 +166,7 @@ export function registerCrud<S extends z.ZodTypeAny>(app: FastifyInstance, cfg: 
 
   app.post(base, async (req: FastifyRequest, reply: FastifyReply) => {
     assertPermission(req, `${cfg.key}.create`);
-    const row = tx(() => createOne(req, req.body));
+    const row = tx(() => createOne(req, withoutGuarded(req, req.body)));
     audit(req, {
       action: 'create', entity: cfg.table, entityId: row.id as number,
       summary: cfg.describe?.(row) ?? `Added a ${cfg.key} row`, after: row,
@@ -136,7 +179,7 @@ export function registerCrud<S extends z.ZodTypeAny>(app: FastifyInstance, cfg: 
   app.post(`${base}/bulk`, async (req: FastifyRequest, reply: FastifyReply) => {
     assertPermission(req, `${cfg.key}.create`);
     const payload = parse(z.object({ rows: z.array(z.unknown()).min(1).max(500) }), req.body);
-    const written = tx(() => payload.rows.map((r) => createOne(req, r)));
+    const written = tx(() => payload.rows.map((r) => createOne(req, withoutGuarded(req, r))));
     audit(req, {
       action: 'bulk_create', entity: cfg.table,
       summary: `Added ${written.length} ${cfg.key} rows`,
@@ -152,9 +195,10 @@ export function registerCrud<S extends z.ZodTypeAny>(app: FastifyInstance, cfg: 
     const before = one(`SELECT * FROM ${cfg.table} WHERE id = ?`, [id]) as Record<string, unknown> | undefined;
     if (!before) throw new HttpError(404, 'That row is not there any more', 'not_found');
 
-    const merged = normaliseOrder({ ...before, ...(req.body as Record<string, unknown>) });
+    const merged = normaliseOrder({ ...before, ...(withoutGuarded(req, req.body) as Record<string, unknown>) });
     const body = parse(cfg.schema, merged) as Record<string, unknown>;
     cfg.validate?.(body, id);
+    cfg.guard?.(req, body, before);
 
     const after = tx(() => {
       const present = cols.filter((c) => body[c] !== undefined);

@@ -46,6 +46,12 @@ export const USERS = {
     username: 'e2e.store', full_name: 'E2E Store Keeper', role: 'store',
     password: 'Testing#2026aa', state: `${AUTH_DIR}/store.json`,
   },
+  // Tidying the master lists and removing a role are the administrator's
+  // alone, so proving that needs somebody who actually is one.
+  admin: {
+    username: 'e2e.admin', full_name: 'E2E Administrator', role: 'admin',
+    password: 'Testing#2026aa', state: `${AUTH_DIR}/admin.json`,
+  },
 } as const;
 
 /**

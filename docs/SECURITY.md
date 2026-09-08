@@ -72,8 +72,37 @@ Currently protected this way:
 | Every costing block, total, price and margin | `costing.*.view` |
 | Buyer summary value, cost and margin | `buyersummary.commercials.view` |
 
-Writes are filtered the same way. A save that omits a block the caller cannot
-edit leaves that block as it was, rather than blanking it.
+Writes are filtered the same way, and this matters more than it sounds.
+Hiding a value on the way out is not the same as refusing it on the way in: a
+store keeper is denied sight of the fabric rate, and for a long time could
+still `POST` one and have it stick — putting a number nobody in that role may
+see into the costing engine and the rate library. Every module now drops a
+guarded field it did not receive permission to set, before anything reads it.
+On a create the schema default stands in; on an update the row's existing
+value survives, so an edit for another reason never blanks a figure the editor
+cannot see. The list is derived from the catalogue rather than repeated, so a
+field declared sensitive tomorrow is protected the day it is declared.
+
+A save that omits a block the caller cannot edit leaves that block as it was,
+rather than blanking it.
+
+---
+
+## Actions hiding inside columns
+
+Some columns are not facts but decisions, and the module's own `create` and
+`edit` permissions are far too broad for them:
+
+| Column | Needs |
+| --- | --- |
+| A waiver's `approved` box | `waivers.approve` |
+| A buyer approval's `status`, moved off Pending | `approvals.approve` |
+
+A waiver silences an alert the factory would otherwise act on — *this order
+loses money*, *the store cannot cover what is left to cut*, *the shipment is
+gated on an inspection that has not passed*. Raising one and granting one are
+different acts, and the second is checked on the write, not on the screen: a
+role that may edit every other field on the row still cannot tick that box.
 
 ---
 
