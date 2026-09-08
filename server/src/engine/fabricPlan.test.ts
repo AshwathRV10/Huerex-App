@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { measuredLoss, planFabric } from './fabricPlan.js';
+import { compareToPlan, measuredLoss, planFabric } from './fabricPlan.js';
 
 /**
  * The merchandiser's own notebook, from a real order:
@@ -75,4 +75,60 @@ test('loss is unanswerable until some cloth is in', () => {
 test('more cloth back than yarn out reads as a negative loss, not a hidden one', () => {
   // Worth seeing: usually a receipt booked against the wrong order.
   assert.equal(measuredLoss(100, 110), -10);
+});
+
+/* ------------------------------------------- the plan against the store -- */
+
+const plan = planFabric([
+  { fabric_type: 'Single Jersey', colour: 'Navy', part: 'Body', grammage_g_per_pc: 88, excess_pct: 12 },
+  { fabric_type: 'Single Jersey', colour: 'Navy', part: 'Collar', grammage_g_per_pc: 10, excess_pct: 12 },
+  { fabric_type: '3T Fleece', colour: '', part: 'Body', grammage_g_per_pc: 200, excess_pct: 10 },
+], 1000).lines;
+
+test('yarn out against cloth back is the factory\'s own loss', () => {
+  // 109.76 kg of navy jersey booked; 99 kg of cloth came in.
+  const [jersey] = compareToPlan(plan, [
+    { fabric_type: 'Single Jersey', colour: 'Navy', kg: 99 },
+  ]);
+  assert.equal(jersey.plannedYarnKg, 109.76, '98.56 for the body plus 11.2 for the collar');
+  assert.equal(jersey.receivedKg, 99);
+  assert.equal(jersey.lossPct, 9.8);
+  assert.equal(jersey.plannedLossPct, 12, 'and it was planned at 12%');
+});
+
+test('body and collar of one cloth are compared together, not split', () => {
+  // The store books a receipt against a cloth and a shade, never a part, so
+  // dividing the loss between the body and the collar would be invented.
+  const rows = compareToPlan(plan, [{ fabric_type: 'Single Jersey', colour: 'Navy', kg: 99 }]);
+  assert.equal(rows.filter((r) => r.fabric_type === 'Single Jersey').length, 1);
+});
+
+test('a plan line with no colour takes the shades no line names', () => {
+  const rows = compareToPlan(plan, [
+    { fabric_type: '3T Fleece', colour: 'Grey Melange', kg: 190 },
+    { fabric_type: '3T Fleege typo', colour: 'Grey', kg: 999 },
+  ]);
+  const fleece = rows.find((r) => r.fabric_type === '3T Fleece')!;
+  assert.equal(fleece.receivedKg, 190, 'a cloth nobody planned is not this plan\'s');
+  assert.equal(fleece.plannedYarnKg, 220);
+});
+
+test('a wildcard line does not also swallow a colour that has its own line', () => {
+  const mixed = planFabric([
+    { fabric_type: 'Single Jersey', colour: 'Navy', grammage_g_per_pc: 88, excess_pct: 12 },
+    { fabric_type: 'Single Jersey', colour: '', grammage_g_per_pc: 88, excess_pct: 6 },
+  ], 1000).lines;
+
+  const rows = compareToPlan(mixed, [
+    { fabric_type: 'Single Jersey', colour: 'Navy', kg: 90 },
+    { fabric_type: 'Single Jersey', colour: 'White', kg: 85 },
+  ]);
+  assert.equal(rows.find((r) => r.colour === 'Navy')!.receivedKg, 90);
+  assert.equal(rows.find((r) => r.colour === '')!.receivedKg, 85, 'the white only, counted once');
+});
+
+test('nothing in yet is no answer, not a total loss', () => {
+  const [jersey] = compareToPlan(plan, []);
+  assert.equal(jersey.receivedKg, 0);
+  assert.equal(jersey.lossPct, null);
 });

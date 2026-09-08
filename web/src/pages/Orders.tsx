@@ -549,8 +549,15 @@ export interface PlannedFabric {
   pieces: number; fabricKg: number; yarnKg: number;
 }
 
+interface PlanVsActual {
+  fabric_type: string; colour: string;
+  plannedYarnKg: number; receivedKg: number;
+  lossPct: number | null; plannedLossPct: number;
+}
+
 interface FabricPlan {
   lines: PlannedFabric[]; pieces: number; fabricKg: number; yarnKg: number;
+  againstPlan: PlanVsActual[];
 }
 
 const FABRIC_COLUMNS: GridColumn[] = [
@@ -707,9 +714,77 @@ function FabricPlanEditor({ orderNo }: { orderNo: string }) {
               not cutting loss, which happens to cloth that has already arrived and is counted
               on the cost sheet.
             </p>
+
+            <AgainstPlan rows={data.againstPlan} />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The plan against the store: yarn booked versus cloth that came back.
+ *
+ * This is what a guessed excess is worth once it has been measured. It appears
+ * on its own as the receipts are entered, and after a few orders the merchant
+ * stops guessing: navy on this jersey runs at twelve per cent, whatever the
+ * mill says.
+ *
+ * The comparison is at fabric and shade rather than per line, because the
+ * store books a receipt against a cloth and a colour and nothing finer — a
+ * body and a collar in the same shade arrive on the same roll.
+ */
+function AgainstPlan({ rows }: { rows: PlanVsActual[] }) {
+  const measured = rows.filter((r) => r.lossPct !== null);
+  if (measured.length === 0) {
+    return (
+      <p className="tiny subtle">
+        Nothing received against this plan yet. As the cloth is booked into the fabric store
+        against this order, what actually arrived is measured against what was taken.
+      </p>
+    );
+  }
+
+  return (
+    <div className="col" style={{ gap: 'var(--s-2)' }}>
+      <b className="tiny">What actually came back</b>
+      <div className="table-wrap">
+        <table className="data stack">
+          <thead>
+            <tr>
+              <th>Fabric</th><th>Colour</th>
+              <th className="num">Yarn taken</th><th className="num">Cloth in</th>
+              <th className="num">Loss</th><th className="num">Planned</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td data-label="Fabric"><b>{r.fabric_type}</b></td>
+                <td data-label="Colour">{r.colour || 'every colour'}</td>
+                <td className="num" data-label="Yarn taken">{r.plannedYarnKg} kg</td>
+                <td className="num" data-label="Cloth in">{r.receivedKg} kg</td>
+                <td className="num" data-label="Loss">
+                  {r.lossPct === null
+                    ? <span className="subtle">nothing in yet</span>
+                    : (
+                      <b style={{ color: r.lossPct > r.plannedLossPct ? 'var(--danger-fg)' : 'var(--ok-fg)' }}>
+                        {r.lossPct}%
+                      </b>
+                    )}
+                </td>
+                <td className="num" data-label="Planned">{r.plannedLossPct}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="tiny subtle">
+        A loss above what was planned means the yarn ran short of the cloth this order needs.
+        Below it means there is cloth to spare. Either way it is this factory\u2019s own figure
+        for this cloth in this shade — worth more than any rule of thumb.
+      </p>
     </div>
   );
 }

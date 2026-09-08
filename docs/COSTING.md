@@ -46,6 +46,54 @@ how many garments the buyer receives.
 
 ---
 
+## The fabric plan — decided with the order
+
+Before any cloth exists, somebody has to say how much yarn to book. That sum
+lives on the order, one line per cloth, on its **Fabric plan** tab:
+
+```
+                                    pieces × g/pc = cloth   + excess = yarn
+Single Jersey · Navy   · Body    88 g/pc    88.0 kg    10%     96.8 kg
+1×1 Rib       · Navy   · Collar  10 g/pc    10.0 kg    10%     11.0 kg
+                                 Total      98.0 kg            107.8 kg
+```
+
+The grammage is finished cloth per garment, worked out from the GSM and the
+body spec. The excess is **process loss** — what disappears between the yarn
+going out and the cloth coming back, in knitting, dyeing and washing. It is
+not cutting loss, which happens to cloth that has already arrived and belongs
+on the cost sheet. Putting the same loss in both places prices the order about
+ten per cent over.
+
+Each fabric carries its own excess, because a dark shade loses more in dyeing
+than a pastel does.
+
+The pieces are the order **plus the excess that ships with it**, since those
+garments are cut from the same rolls.
+
+### It feeds the cost sheet
+
+A sheet proposed for an order that has a plan takes its fabric lines from it —
+the cloth, the shade, the part and the grammage — instead of guessing from
+whatever was last cut. The draft says so, so nobody mistakes a figure a person
+chose for one the app invented.
+
+### And it gets measured
+
+As cloth is booked into the fabric store against the order, what arrived is
+compared with what was taken:
+
+```
+Single Jersey  yarn taken 96.8 kg   cloth in 88.2 kg   loss 8.88%   planned 10%
+```
+
+The comparison is drawn at fabric and shade rather than per line, because the
+store books a receipt against a cloth and a colour and nothing finer — a body
+and a collar in the same shade arrive on the same roll.
+
+After a few orders the excess stops being a rule of thumb: navy on this jersey
+runs at twelve per cent, whatever anybody says it should.
+
 ## Fabric — a build-up, not a rate
 
 The brief that started this was specific: *dyeing rates vary colour to colour,

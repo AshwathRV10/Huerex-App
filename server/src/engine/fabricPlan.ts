@@ -90,3 +90,74 @@ export function measuredLoss(yarnKg: number, receivedKg: number): number | null 
   if (back === 0) return null;
   return r2(((out - back) / out) * 100);
 }
+
+
+/* ------------------------------------------------- what actually came back */
+
+export interface FabricReceipt {
+  fabric_type: string;
+  colour: string;
+  kg: number;
+}
+
+export interface PlanVsActual {
+  fabric_type: string;
+  /** blank means the plan line covers every colour without one of its own */
+  colour: string;
+  plannedYarnKg: number;
+  receivedKg: number;
+  /** null until some cloth is in — no answer is not the same as no loss */
+  lossPct: number | null;
+  /** the excess that was planned, to compare the measured loss against */
+  plannedLossPct: number;
+}
+
+/**
+ * The plan against the store: yarn booked versus cloth that came back.
+ *
+ * This is what turns a guessed excess into this factory's own figure. The
+ * comparison is drawn at fabric and colour, not per plan line, because the
+ * store ledger records a receipt against a cloth and a shade and nothing
+ * finer. A jersey body and a jersey collar in the same shade arrive on the
+ * same roll, so splitting the loss between them would be invented precision.
+ *
+ * A plan line with no colour covers whatever arrives in shades that no line
+ * names, so a wildcard and a specific line never count the same receipt twice.
+ */
+export function compareToPlan(planned: PlannedFabric[], receipts: FabricReceipt[]): PlanVsActual[] {
+  const named = new Map<string, Set<string>>();
+  for (const l of planned) {
+    if (!l.colour) continue;
+    const set = named.get(l.fabric_type) ?? new Set<string>();
+    set.add(l.colour.toLowerCase());
+    named.set(l.fabric_type, set);
+  }
+
+  const groups = new Map<string, PlanVsActual>();
+  for (const l of planned) {
+    const key = `${l.fabric_type}\u0000${l.colour ?? ''}`;
+    const g = groups.get(key) ?? {
+      fabric_type: l.fabric_type,
+      colour: l.colour ?? '',
+      plannedYarnKg: 0,
+      receivedKg: 0,
+      lossPct: null,
+      plannedLossPct: num(l.excess_pct),
+    };
+    g.plannedYarnKg = r2(g.plannedYarnKg + num(l.yarnKg));
+    groups.set(key, g);
+  }
+
+  for (const g of groups.values()) {
+    const specific = named.get(g.fabric_type) ?? new Set<string>();
+    g.receivedKg = r2(receipts
+      .filter((r) => r.fabric_type === g.fabric_type
+        && (g.colour
+          ? r.colour.toLowerCase() === g.colour.toLowerCase()
+          : !specific.has((r.colour ?? '').toLowerCase())))
+      .reduce((s, r) => s + num(r.kg), 0));
+    g.lossPct = measuredLoss(g.plannedYarnKg, g.receivedKg);
+  }
+
+  return [...groups.values()];
+}

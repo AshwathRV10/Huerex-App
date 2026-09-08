@@ -954,14 +954,18 @@ function OverheadBlock({ draft, patch, editable, memoryCtx, block }: {
 /* ------------------------------------------------------------- the preview */
 
 function ProposalPreview({ proposal }: {
-  proposal: Draft & { selling_price_because?: string; selling_price_placeholder?: boolean };
+  proposal: Draft & {
+    selling_price_because?: string; selling_price_placeholder?: boolean;
+    fabric_source?: 'plan' | 'cutting' | 'memory';
+  };
 }) {
   type Item = { text: string; placeholder: boolean };
   const rows: [string, Item[]][] = [
-    ['Fabric', proposal.fabric.map((f) => ({
-      text: `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''} at ${f.consumption_g_per_pc} g/pc`,
-      placeholder: (f.components ?? []).some((c) => c._placeholder),
-    }))],
+    [proposal.fabric_source === 'plan' ? 'Fabric — from the order\u2019s plan' : 'Fabric',
+      proposal.fabric.map((f) => ({
+        text: `${f.fabric_type}${f.colour ? ` · ${f.colour}` : ''}${f.part && f.part !== 'Body' ? ` (${f.part})` : ''} at ${f.consumption_g_per_pc} g/pc`,
+        placeholder: (f.components ?? []).some((c) => c._placeholder),
+      }))],
     ['Job work', proposal.jobwork.map((j) => ({
       text: `${j.process}${j.vendor ? ` at ${j.vendor}` : ''}${j.rate_per_pc ? ` — ₹${j.rate_per_pc}/pc` : ''}`,
       placeholder: Boolean(j._placeholder),

@@ -7,7 +7,9 @@ import { redact, redactMany, ORDER_SPEC } from '../rbac/fieldPolicy.js';
 import { HttpError, parse, sendCsv, zDate, zText } from '../lib/http.js';
 import { learnValue } from './masters.js';
 import { effectiveExcessPct, wipForOrder, type OrderRow } from '../engine/facts.js';
-import { planFabric, type FabricPlanLine } from '../engine/fabricPlan.js';
+import {
+  compareToPlan, planFabric, type FabricPlanLine, type FabricReceipt,
+} from '../engine/fabricPlan.js';
 import { plannedCut } from '../engine/flow.js';
 
 /**
@@ -145,15 +147,29 @@ function writeFabricPlan(
   });
 }
 
-/** The plan with its arithmetic done, which is the only form worth reading. */
-function fabricPlanFor(order: OrderRow): ReturnType<typeof planFabric> & { pieces: number } {
+/**
+ * The plan with its arithmetic done, and what the store has actually received
+ * against it — which is the half that turns a guessed excess into a measured
+ * one.
+ */
+function fabricPlanFor(order: OrderRow) {
   const rows = all<FabricPlanLine>(
     'SELECT * FROM order_fabrics WHERE order_id = ? ORDER BY seq, id', [order.id],
   );
   // Excess ships in the same cartons, so those garments are cut from these
   // rolls and their cloth has to be bought with the rest.
   const pieces = Math.round(order.order_qty * (1 + effectiveExcessPct(order) / 100));
-  return { ...planFabric(rows, pieces), pieces };
+  const plan = planFabric(rows, pieces);
+
+  // Only receipts. An issue to cutting is cloth leaving the store again, and
+  // counting it here would read as loss that never happened.
+  const receipts = all<FabricReceipt>(
+    `SELECT fabric_type, colour, SUM(qty_kg) AS kg
+       FROM fabric_ledger WHERE order_id = ? AND direction = 'RECEIPT'
+      GROUP BY fabric_type, colour`, [order.id],
+  );
+
+  return { ...plan, pieces, againstPlan: compareToPlan(plan.lines, receipts) };
 }
 
 function writeMatrix(orderId: number, body: z.infer<typeof MatrixBody>, userId?: number | null): void {

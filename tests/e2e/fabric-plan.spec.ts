@@ -96,3 +96,64 @@ test('a merchandiser who may not edit orders sees the plan but cannot change it'
   await expect(p.getByRole('button', { name: /Plan the fabric|Edit the plan/ })).toHaveCount(0);
   await ctx.close();
 });
+
+/* ------------------------------------------ the plan against the store -- */
+
+test('the loss is measured as the cloth is booked in', async ({ page, request }) => {
+  const orderNo = await makeOrder(request);
+  await request.put(`/api/orders/${orderNo}/fabrics`, {
+    data: {
+      fabrics: [
+        { fabric_type: 'Single Jersey', colour: 'Navy', part: 'Body', grammage_g_per_pc: 88, excess_pct: 10 },
+      ],
+    },
+  });
+
+  await page.goto(`/orders/${orderNo}`);
+  await page.getByRole('tab', { name: 'Fabric plan' }).click();
+  await expect(page.getByText(/Nothing received against this plan yet/)).toBeVisible();
+
+  // 96.8 kg of yarn was booked; 88.2 kg of cloth comes back.
+  const got = await request.post('/api/fabric', {
+    data: {
+      txn_date: '2026-09-08', direction: 'RECEIPT', fabric_type: 'Single Jersey', colour: 'Navy',
+      order_no: orderNo, qty_kg: 88.2, rate_per_kg: 320, supplier: 'E2E MILLS',
+    },
+  });
+  expect(got.status(), await got.text()).toBe(201);
+
+  await page.reload();
+  await page.getByRole('tab', { name: 'Fabric plan' }).click();
+  await expect(page.getByText('What actually came back')).toBeVisible();
+
+  const row = page.locator('table.data tbody tr').filter({ hasText: 'Single Jersey' }).last();
+  await expect(row).toContainText('96.8 kg');
+  await expect(row).toContainText('88.2 kg');
+  await expect(row).toContainText('8.88%');
+});
+
+test('a cost sheet is proposed from the plan, part and all', async ({ page, request }) => {
+  const orderNo = await makeOrder(request);
+  await request.put(`/api/orders/${orderNo}/fabrics`, {
+    data: {
+      fabrics: [
+        { fabric_type: 'Single Jersey', colour: 'Navy', part: 'Body', grammage_g_per_pc: 88, excess_pct: 10 },
+        { fabric_type: '1x1 Rib', colour: 'Navy', part: 'Collar', grammage_g_per_pc: 10, excess_pct: 10 },
+      ],
+    },
+  });
+
+  await page.goto(`/costing/${orderNo}`);
+  // The draft says where the fabric came from rather than presenting a
+  // grammage somebody chose as though the app had invented it.
+  await expect(page.getByText(/Fabric — from the order/)).toBeVisible();
+  await expect(page.getByText(/Single Jersey · Navy at 88 g\/pc/)).toBeVisible();
+  await expect(page.getByText(/1x1 Rib · Navy \(Collar\) at 10 g\/pc/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Start a cost sheet' }).click();
+  await expect(page.getByText('Ordered', { exact: true })).toBeVisible();
+
+  // And the sheet itself carries the planned grammage, not a guess.
+  const grams = page.getByRole('textbox', { name: 'Consumption' }).first();
+  await expect(grams).toHaveValue('88');
+});
