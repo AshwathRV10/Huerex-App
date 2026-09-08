@@ -87,6 +87,17 @@ console.log('test users ready\n');
 
   const write = await call(u, 'POST', '/api/costing/order/HR-002', {});
   check('cannot create a cost sheet', write.status === 403, `got ${write.status}`);
+
+  // The fabric plan is grammage and kilograms, no money, so the floor may read
+  // it — they are the ones waiting for the cloth. Deciding it is planning work.
+  const plan = await call(u, 'GET', '/api/orders/HR-002/fabrics');
+  check('can read the fabric plan', plan.status === 200, `got ${plan.status}`);
+  check('and it carries no rate or value',
+    !JSON.stringify(plan.json).match(/rate|value|cost/i));
+  const setPlan = await call(u, 'PUT', '/api/orders/HR-002/fabrics', {
+    fabrics: [{ fabric_type: 'Single Jersey', grammage_g_per_pc: 88, excess_pct: 10 }],
+  });
+  check('cannot decide the fabric plan', setPlan.status === 403, `got ${setPlan.status}`);
   console.log();
 }
 
